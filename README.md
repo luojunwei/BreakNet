@@ -1,6 +1,6 @@
 # BreakNet
 
-## A deep learning method to detect deletion from long reads alignment. It is
+A deep learning method to detect deletion from long reads alignment. It is
 built with **Tensorflow** and **Python 3**.
 
 

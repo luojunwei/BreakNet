@@ -79,7 +79,6 @@ python breaknet.py train_mode training_data_folder evaluation_data_folder traine
 ```
 
 ### Call deletion
-
 In the folder "trained_weight", we give the trained weight files, which can directly used for calling deletions.
 
 #### 1. Produce data for call sv
@@ -91,5 +90,4 @@ python breaknet.py data_mode bamfile_path chromosome_name start_position end_pos
 ```bash
 python breaknet.py call_mode call_folder trained_weight_path
 ```
-
 

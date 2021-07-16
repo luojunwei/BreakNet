@@ -21,7 +21,7 @@ conda deactivate
 ```
 
 #### 2. clone BreakNet
-- After creating and activating the BreakNet virtual environment, download breakNet from github:
+- After creating and activating the BreakNet virtual environment, download BreakNet from github:
 ```bash
 git clone https://github.com/luojunwei/BreakNet.git
 cd BreakNet

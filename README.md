@@ -67,13 +67,19 @@ python breaknet.py train_mode traindatafolder,  evaluationdatafolder, epochs
 ```bash
 python breaknet.py call_mode datafolder, trainedweightspath
 ```
-BAM file should be sorted and indexed
-contig is name of contig in bam file
-start/end are produced data start/end positions in reference
-outputfolder is a folder use to store data_mode produced data
-vcf file use to label data for training
-data in traindatafolder,  evaluationdatafolder are used to train and evaluate model
-data in datafolder, traindatafolder,  evaluationdatafolder are produced by breaknet
-epochs are max training epochs of train_mode, breaknet will save best learned parameter according by  
-F1 scores on evaluation data.
+BAM file should be sorted and indexed;
+
+contig is name of contig in bam file;
+
+start/end are produced data start/end positions in reference;
+
+outputfolder is a folder use to store data_mode produced data;
+
+vcf file use to label data for training;
+
+data in traindatafolder,  evaluationdatafolder are used to train and evaluate model;
+
+data in datafolder, traindatafolder,  evaluationdatafolder are produced by breaknet;
+
+epochs are max training epochs of train_mode, breaknet will save best learned parameter according by F1 scores on evaluation data.
 

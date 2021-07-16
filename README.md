@@ -67,12 +67,12 @@ vcf_path is the path of the vcf which is used to label training data;
 ```bash
 python breaknet.py train_mode training_data_folder evaluation_data_folder trained_weight_path epochs
 
-> First, we use commond 1 and select some chromosome to produce training data, which is stored in the training_data_folder.
-> Second, we use commond 1 and select some chromosome to produce evaluation data, which is stored in the evaluation_data_folder.
+>>First, we use commond 1 and select some chromosome to produce training data, which is stored in the training_data_folder.
+>>Second, we use commond 1 and select some chromosome to produce evaluation data, which is stored in the evaluation_data_folder.
 
-> trained_weight_path is the path of the trained weight file of the model.
+>>trained_weight_path is the path of the trained weight file of the model.
 
-> epochs are max training epochs.
+>>epochs are max training epochs.
 ```
 
 #### 3. To produce data for call sv

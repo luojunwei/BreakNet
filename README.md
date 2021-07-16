@@ -84,6 +84,8 @@ In the folder "trained_weight", we give the trained weight files, which can dire
 #### 1. Produce data for call sv
 ```bash
 python breaknet.py data_mode bamfile_path chromosome_name start_position end_position call_folder
+
+  If there are multiple chromosomes, users should porduce data for each chromosome respectively.
 ```
 
 #### 2. Call deletion

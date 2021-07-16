@@ -50,36 +50,39 @@ http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/hgsv_sv_discovery/wor
 
 #### 1. To produce data for training
 ```bash
-python breaknet.py data_mode bamfilepath, contig, start, end, outputfolder, vcfpath
+python breaknet.py data_mode bamfile_path chromosome_name start_position end_position output_data_folder vcf_path
+
+bamfile_path is the path of the alignment file about the reference and the long read set. And, the bam file should be sorted and indexed;
+
+chromosome_name is the name of the chromosome in the bam file;
+
+start_position/end_position are start/end positions of the chromosome. In this region, we will extract and label training data.
+
+output_data_folder is a folder which is used to store training data or evaluation data;
+
+vcf_path is the path of the vcf which is used to label training data;
 ```
 
-#### 2. To produce data for call sv
+#### 2. Train a new model
 ```bash
-python breaknet.py data_mode bamfilepath, contig, start, end, outputfolder, ''
+python breaknet.py train_mode training_data_folder evaluation_data_folder trained_weight_path epochs
+
+First, we use commond 1 and select some chromosome to produce training data, which are stored in the training_data_folder.
+Second, we use commond 1 and select some chromosome to produce evaluation data, which are stored in the evaluation_data_folder.
+
+trained_weight_path is the path of the trained weight file of the model.
+
+epochs are max training epochs.
 ```
 
-#### 3. Train a new model
+#### 3. To produce data for call sv
 ```bash
-python breaknet.py train_mode traindatafolder,  evaluationdatafolder, epochs
+python breaknet.py data_mode bamfile_path chromosome_name start_position end_position call_folder
 ```
 
 #### 4. To call sv
 ```bash
-python breaknet.py call_mode datafolder, trainedweightspath
+python breaknet.py call_mode call_folder trained_weight_path
 ```
-BAM file should be sorted and indexed;
 
-contig is name of contig in bam file;
-
-start/end are produced data start/end positions in reference;
-
-outputfolder is a folder use to store data_mode produced data;
-
-vcf file use to label data for training;
-
-data in traindatafolder,  evaluationdatafolder are used to train and evaluate model;
-
-data in datafolder, traindatafolder,  evaluationdatafolder are produced by breaknet;
-
-epochs are max training epochs of train_mode, breaknet will save best learned parameter according by F1 scores on evaluation data.
 

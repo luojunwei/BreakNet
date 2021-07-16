@@ -451,15 +451,29 @@ def myshow(preadarray, pcigararray, qualityarray, refseq, seqbase, excludelist =
     plt.matshow(preadarray)
     plt.show()
   else:
-    fm = (spotarray>0).astype('float32')
-    return fm.T.reshape(1, fm.size//(200 * 18), 200, 18, 1)
+    timestep = 100
+    fm = (spotarray>0).astype('float32').T
+    fm = fm.reshape(fm.size//(200 * 18), 200, 18, 1)
+    if(fm.shape[0]<timestep):
+      return np.array(0), fm.reshape(1, fm.shape[0], 200, 18, 1)
+    
+    tail = fm.shape[0]%timestep
+    if(tail == 0):
+      return fm.reshape(fm.shape[0]//timestep, timestep, 200, 18, 1), np.array(0)
+      
+    topdata, taildata = fm[:-tail], fm[-tail:].reshape(1, tail, 200, 18, 1)
+    
+    
+    return topdata.reshape(topdata.shape[0]//timestep, timestep, 200, 18, 1), taildata
 
 
 
 
 
 def pileupf(bamfile, contig, start, end, droplq = False, dropvalue = 0.8):
-  end = start + ((end-start)//200+1)*200
+  window_size = 200
+  samplelocation = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
+  end = samplelocation[-1, 1] 
   totalstarttime = time.time()
   locationlist = []
   readlist = []
@@ -649,8 +663,60 @@ def pileupf(bamfile, contig, start, end, droplq = False, dropvalue = 0.8):
   
   return pallarray[0].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[1].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[2].reshape(int(pallarray.shape[1] / readlength), readlength), refseq, np.array(softcliplist), seqbase
 
-def feature_matrix(bamfile, contig, start, end, showpic = False):
+def labeldata(vcfpath, contig, start, end):
+  goldl = []
+  window_size = 200
+  index = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
+  if('chr' in contig):
+    contig = contig[3:]
+  for rec in pysam.VariantFile(vcfpath).fetch():
 
-  preadarray, pcigararray, qualityarray, refseq, softcliplist, seqbase = pileupf(bamfile, contig, start, end)
-  return myshow(preadarray, pcigararray, qualityarray, refseq, seqbase, softread =  softcliplist, showpic = showpic)
+    if(rec.contig != contig):
+      continue            
+    if((rec.info['SVTYPE'] == 'DEL')):
+      goldl.append([rec.start, rec.stop, rec.stop - rec.start, 1])
+        
+  
+    
+  goldl = (pd.DataFrame(goldl).sort_values([0, 1]).values).astype('float64')
 
+
+  y = []
+  for rec in index:
+        
+    if(((goldl[:,1:2] > rec[0]) & (goldl[:,:1] < rec[1])).sum() != 0):
+      y.append((((goldl[:,1:2] > rec[0]) & (goldl[:,:1] < rec[1])) * goldl[:,3:]).sum())
+
+
+    else:
+      y.append(0)
+  return (np.array(y)>0).astype('float32')
+def feature_matrix(bamfilepath, contig, start, end, outputpath = '', vcfpath = '', showpic = False):
+  bamfile = pysam.AlignmentFile(bamfilepath, "rb")
+  locationlist = [a for a in range(start, end, 6000)]
+  for location in locationlist:
+    contig, start, end = str(contig), int(location), int(location+6000)
+    preadarray, pcigararray, qualityarray, refseq, softcliplist, seqbase = pileupf(bamfile, str(contig), int(start), int(end))
+    data1, data2 = myshow(preadarray, pcigararray, qualityarray, refseq, seqbase, softread =  softcliplist, showpic = showpic)
+    label, label1, label2 = np.array([0]), np.array([0]), np.array([0])
+    if(vcfpath != ''):
+      label = labeldata(vcfpath, contig, start, end)
+      
+      if(data1.size != 1 and data2.size != 1):
+        label1, label2 = label[:data1.shape[0]*data1.shape[1]], label[data1.shape[0]*data1.shape[1]:]
+
+
+    if(data1.size != 1):
+      if(label1.size != 1):
+        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data1, label = label1)
+      else:
+        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data1, label = label)
+        
+
+      return 0 
+    if(data2.size != 1):
+      if(label1.size != 1):
+        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data2, label = label2)
+      else:
+        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data2, label = label)
+  

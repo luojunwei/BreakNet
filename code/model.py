@@ -91,14 +91,22 @@ def init_model():
 
     outputs = tf.keras.layers.Dense(units=1, activation="sigmoid")(hidden_layer)
     model = tf.keras.Model(inputs, outputs)
-    model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer=tf.optimizers.Adam())
+    model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer=tf.optimizers.Adam(),metrics=[keras.metrics.TruePositives(name='tp'),
+              keras.metrics.FalsePositives(name='fp'),
+              keras.metrics.TrueNegatives(name='tn'),
+              keras.metrics.FalseNegatives(name='fn'), 
+              keras.metrics.BinaryAccuracy(name='accuracy'),
+              keras.metrics.Precision(name='precision'),
+              keras.metrics.Recall(name='recall')])
+    model.summary()
+    return model
 
-    return tf.keras.Model(inputs, outputs)
-
+from os import listdir
+from os.path import isfile, join
 def mergedeletioncall(predict, contig, startloc, window_size = 200):
     #contig: contig name in bam file, predict: 1d array, startloc: first prediction location in reference, window_size: the sub-region of a feature matrix included
     predict = (predict > 0.5).flatten()
-    svlist = [['contig', 'start', 'end', 'SVTYPE']]
+    svlist = []
     loc = startloc-window_size
     insv = False
     for p in predict:
@@ -114,5 +122,50 @@ def mergedeletioncall(predict, contig, startloc, window_size = 200):
                 insv = False
 
                 continue
-    return pd.DataFrame(svlist)
+    return svlist
+def train_fn(traindatapath = './',  testdatapath = './', epochs = 1000):
+    model = init_model()
+    trainfilelist = [traindatapath+f for f in listdir(traindatapath) if(isfile(join(traindatapath, f)) and 'npz' in f)]
+    Xy = np.load(trainfilelist[0])
+    train = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
+    for loc in range(1, len(trainfilelist)):
+        Xy = np.load(trainfilelist[loc])
+        tmpds = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
+        train = train.concatenate(tmpds)
 
+    testfilelist = [testdatapath+f for f in listdir(testdatapath) if(isfile(join(testdatapath, f)) and 'npz' in f)]
+    Xy = np.load(testfilelist[0])
+    test = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
+    for loc in range(1, len(testfilelist)):
+        Xy = np.load(testfilelist[loc])
+        tmpds = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
+        test = train.concatenate(tmpds)    
+    bestf1 = 0
+    for epoch in range(epochs):
+        model.fit(train)
+        h = model.evaluate(test)
+        r, p = h[-1], h[-2]
+        f1 = 2*(r*p)/(r+p+1e-10)
+        if(bestf1<f1):
+            model.save_weights('savedweight')
+            bestf1 = f1
+            print()
+            print('New best F1: ', bestf1)
+            print()
+    return model
+def predict_fn(datapath = './', weightpath = 'trainedweights'):
+    model = init_model()
+    model.load_weights(weightpath)
+    filelist = [datapath+f for f in listdir(datapath) if(isfile(join(datapath, f)) and 'npz' in f)]
+    resultlist = [['contig', 'start', 'end', 'SVTYPE']]
+    for datapath in filelist:
+        Xy = np.load(datapath)
+        data = tf.data.Dataset.from_tensor_slices((Xy['data'])).batch(80)
+        predict = model.predict(data)>0.5
+        contig, start = datapath.split(',')[0][len(datapath):], datapath.split(',')[1]
+        resultlist += mergedeletioncall(predict, contig, startloc = int(start))
+    df = pd.DataFrame(resultlist)
+    new_header = df.iloc[0] 
+    df = df[1:] 
+    df.columns = new_header
+    (df.sort_values(['contig', 'start']).to_csv('result.csv'))

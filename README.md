@@ -48,20 +48,32 @@ http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/hgsv_sv_discovery/wor
 
 ## Usage
 
-
-
-#### 1. extract features
+#### 1. To produce data for training
 ```bash
-from feature import feature_matrix
-bamfile = pysam.AlignmentFile("*/HG002_PB_70x_RG_HP10XtrioRTG.bam", "rb")
-contig, start, end = '1', 2431832-1300, 2431832+1000 
-fm = feature_matrix(bamfile, contig, start, end)
+python breaknet.py data_mode bamfilepath, contig, start, end, outputfolder, vcfpath
 ```
 
-#### 2. load model and make prediction
+#### 2. To produce data for call sv
 ```bash
-from model import init_model
-model = init_model()
-model.load_weights('timedist_w2down10_17andfullna19240hg002')
-prediction = model.predict(fm)>0.5
+python breaknet.py data_mode bamfilepath, contig, start, end, outputfolder, ''
 ```
+
+#### 3. Train a new model
+```bash
+python breaknet.py train_mode traindatafolder,  evaluationdatafolder, epochs
+```
+
+#### 4. To call sv
+```bash
+python breaknet.py call_mode datafolder, trainedweightspath
+```
+BAM file should be sorted and indexed
+contig is name of contig in bam file
+start/end are produced data start/end positions in reference
+outputfolder is a folder use to store data_mode produced data
+vcf file use to label data for training
+data in traindatafolder,  evaluationdatafolder are used to train and evaluate model
+data in datafolder, traindatafolder,  evaluationdatafolder are produced by breaknet
+epochs are max training epochs of train_mode, breaknet will save best learned parameter according by  
+F1 scores on evaluation data.
+

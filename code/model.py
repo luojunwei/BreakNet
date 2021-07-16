@@ -123,7 +123,7 @@ def mergedeletioncall(predict, contig, startloc, window_size = 200):
 
                 continue
     return svlist
-def train_fn(traindatapath = './',  testdatapath = './', epochs = 1000):
+def train_fn(traindatapath = './',  testdatapath = './', trainedweightspath = 'savedweight', epochs = 1000):
     model = init_model()
     trainfilelist = [traindatapath+f for f in listdir(traindatapath) if(isfile(join(traindatapath, f)) and 'npz' in f)]
     Xy = np.load(trainfilelist[0])

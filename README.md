@@ -67,8 +67,8 @@ python breaknet.py data_mode bamfile_path chromosome_name start_position end_pos
 ```bash
 python breaknet.py train_mode training_data_folder evaluation_data_folder trained_weight_path epochs
 
-  First, we use commond 1 and select some chromosome to produce training data, which is stored in the training_data_folder.
-  Second, we use commond 1 and select some chromosome to produce evaluation data, which is stored in the evaluation_data_folder.
+  First, we use commond 1 and select some chromosomes to produce training data, which is stored in the training_data_folder.
+  Second, we use commond 1 and select other chromosomes to produce evaluation data, which is stored in the evaluation_data_folder.
 
   trained_weight_path is the path of the trained weight file of the model.
 

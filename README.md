@@ -52,27 +52,27 @@ http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/hgsv_sv_discovery/wor
 ```bash
 python breaknet.py data_mode bamfile_path chromosome_name start_position end_position output_data_folder vcf_path
 
-bamfile_path is the path of the alignment file about the reference and the long read set. And, the bam file should be sorted and indexed;
+  bamfile_path is the path of the alignment file about the reference and the long read set. And, the bam file should be sorted and indexed;
 
-chromosome_name is the name of the chromosome in the bam file;
+  chromosome_name is the name of the chromosome in the bam file;
 
-start_position/end_position are start/end positions of the chromosome. In this region, we will extract and label training data.
+  start_position/end_position are start/end positions of the chromosome. In this region, we will extract and label training data.
 
-output_data_folder is a folder which is used to store training data or evaluation data;
+  output_data_folder is a folder which is used to store training data or evaluation data;
 
-vcf_path is the path of the vcf which is used to label training data;
+  vcf_path is the path of the vcf which is used to label training data;
 ```
 
 #### 2. Train a new model
 ```bash
 python breaknet.py train_mode training_data_folder evaluation_data_folder trained_weight_path epochs
 
- First, we use commond 1 and select some chromosome to produce training data, which is stored in the training_data_folder.
- Second, we use commond 1 and select some chromosome to produce evaluation data, which is stored in the evaluation_data_folder.
+  First, we use commond 1 and select some chromosome to produce training data, which is stored in the training_data_folder.
+  Second, we use commond 1 and select some chromosome to produce evaluation data, which is stored in the evaluation_data_folder.
 
- trained_weight_path is the path of the trained weight file of the model.
+  trained_weight_path is the path of the trained weight file of the model.
 
- epochs are max training epochs.
+  epochs are max training epochs.
 ```
 
 #### 3. To produce data for call sv

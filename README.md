@@ -48,6 +48,8 @@ http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/hgsv_sv_discovery/wor
 
 ## Usage
 
+### Train Model
+
 #### 1. To produce data for training
 ```bash
 python breaknet.py data_mode bamfile_path chromosome_name start_position end_position output_data_folder vcf_path
@@ -76,12 +78,16 @@ python breaknet.py train_mode training_data_folder evaluation_data_folder traine
   epochs are max training epochs.
 ```
 
-#### 3. To produce data for call sv
+### Call deletion
+
+In the folder "trained_weight", we give the trained weight files, which can directly used for calling deletions.
+
+#### 1. To produce data for call sv
 ```bash
 python breaknet.py data_mode bamfile_path chromosome_name start_position end_position call_folder
 ```
 
-#### 4. To call sv
+#### 2. To call sv
 ```bash
 python breaknet.py call_mode call_folder trained_weight_path
 ```

@@ -147,7 +147,7 @@ def train_fn(traindatapath = './',  testdatapath = './', trainedweightspath = 's
         r, p = h[-1], h[-2]
         f1 = 2*(r*p)/(r+p+1e-10)
         if(bestf1<f1):
-            model.save_weights('savedweight')
+            model.save_weights(trainedweightspath)
             bestf1 = f1
             print()
             print('New best F1: ', bestf1)

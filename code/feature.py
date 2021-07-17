@@ -661,7 +661,7 @@ def pileupf(bamfile, contig, start, end, droplq = False, dropvalue = 0.8):
   #print('readlisttime',time.time() - readlisttime)
   #print(time.time() - totalstarttime, paddeltime)
   
-  return pallarray[0].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[1].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[2].reshape(int(pallarray.shape[1] / readlength), readlength), refseq, np.array(softcliplist), seqbase
+  return pallarray[0].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[1].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[2].reshape(int(pallarray.shape[1] / readlength), readlength), refseq, np.array(softcliplist, dtype = 'object'), seqbase
 
 def labeldata(vcfpath, contig, start, end):
   goldl = []
@@ -693,9 +693,9 @@ def labeldata(vcfpath, contig, start, end):
   return (np.array(y)>0).astype('float32')
 def feature_matrix(bamfilepath, contig, start, end, outputpath = '', vcfpath = '', showpic = False):
   bamfile = pysam.AlignmentFile(bamfilepath, "rb")
-  locationlist = [a for a in range(start, end, 6000)]
+  locationlist = [a for a in range(start, end+2000, 2000)]
   for location in locationlist:
-    contig, start, end = str(contig), int(location), int(location+6000)
+    contig, start, end = str(contig), int(location), int(location+2000)
     preadarray, pcigararray, qualityarray, refseq, softcliplist, seqbase = pileupf(bamfile, str(contig), int(start), int(end))
     data1, data2 = myshow(preadarray, pcigararray, qualityarray, refseq, seqbase, softread =  softcliplist, showpic = showpic)
     label, label1, label2 = np.array([0]), np.array([0]), np.array([0])

@@ -4,6 +4,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import pysam
+from scipy.sparse import coo_matrix
+import time
+import numpy as np
+import tensorflow as tf
+import pysam
+import matplotlib.pyplot as plt
 
 def allocation(cigartuples, posinref, readarray, qualityarray, start, end): 
   posinread = 0
@@ -662,6 +668,15 @@ def pileupf(bamfile, contig, start, end, droplq = False, dropvalue = 0.8):
   #print(time.time() - totalstarttime, paddeltime)
   
   return pallarray[0].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[1].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[2].reshape(int(pallarray.shape[1] / readlength), readlength), refseq, np.array(softcliplist, dtype = 'object'), seqbase
+def fx(alist, blist, clist, rowcount):
+    for b in blist:
+        alist.append(b)
+        clist.append(rowcount)
+def chioce_top18(tensor):
+    batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+    tensor = tf.concat([tensor, tf.zeros([batch_size, window_size, 18])], axis = 2)
+    return tf.reshape(tf.gather(tensor, tf.argsort(tf.reduce_sum(tensor, 1, keepdims = True), axis = 2), axis=2, batch_dims=1)[:,:,:,-18:], [tensor.shape[0], tensor.shape[1], 18, 1])
+    
 
 def labeldata(vcfpath, contig, start, end):
   goldl = []
@@ -691,32 +706,246 @@ def labeldata(vcfpath, contig, start, end):
     else:
       y.append(0)
   return (np.array(y)>0).astype('float32')
-def feature_matrix(bamfilepath, contig, start, end, outputpath = '', vcfpath = '', showpic = False):
-  bamfile = pysam.AlignmentFile(bamfilepath, "rb")
-  locationlist = [a for a in range(start, end+2000, 2000)]
-  for location in locationlist:
-    contig, start, end = str(contig), int(location), int(location+2000)
-    preadarray, pcigararray, qualityarray, refseq, softcliplist, seqbase = pileupf(bamfile, str(contig), int(start), int(end))
-    data1, data2 = myshow(preadarray, pcigararray, qualityarray, refseq, seqbase, softread =  softcliplist, showpic = showpic)
+import time
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import pysam
+from scipy.sparse import coo_matrix
+import time
+import numpy as np
+import tensorflow as tf
+import pysam
+import matplotlib.pyplot as plt
+def fx(alist, blist, clist, rowcount):
+  for b in blist:
+    alist.append(b)
+    clist.append(rowcount)
+def chioce_top18(tensor):
+  batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+  tensor = tf.concat([tensor, tf.zeros([batch_size, window_size, 18])], axis = 2)
+  return tf.reshape(tf.gather(tensor, tf.argsort(tf.reduce_sum(tensor, 1, keepdims = True), axis = 2), axis=2, batch_dims=1)[:,:,:,-18:], [tensor.shape[0], tensor.shape[1], 18, 1])
+
+def myshow(bamfile, contig, window_size = 200):
+  block = 10000000
+  fmlist = []
+  masklist = []
+  indexlist = []
+  for teststart in range(0, 500000000, block):
+    collist = []
+    rowlist = []
+    rowend = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
+    overlap = False
+    for AlignedSegment in bamfile.fetch(contig, teststart, teststart + block):
+      overlap = True
+      count += 1
+      seqqosition =(AlignedSegment.get_reference_positions())
+      cstart = seqqosition[0]
+      cend = seqqosition[-1]
+      seqqosition = set(range(cstart, cend+1)) - set(seqqosition)
+      newrow = True
+      loc = -1
+      for oneend in rowend:
+        loc += 1
+        if(oneend<cstart):
+          fx(collist, seqqosition, rowlist, loc)
+          rowend[loc] = cend
+          newrow = False
+          break
+      if(newrow == True and (rowcount < 100)):
+        rowcount += 1
+        rowend.append(cend)
+        fx(collist, seqqosition, rowlist, len(rowend)-1)
+      if(maxend<cend):
+        maxend = cend
+      if(minstart>cstart):
+        minstart=cstart
+    if(overlap == False):
+      trueend = teststart
+      continue
+    minstart = min(teststart, minstart)
+    maxend = max(teststart+block, maxend + 1)
+    row  = np.array(rowlist)
+    col  = np.array(collist)-minstart
+    data = np.ones(col.size, dtype = np.float32)
+    fm = (coo_matrix((data, (row, col)), shape=(len(rowend), (maxend-minstart))).toarray()[:,teststart - minstart:teststart - minstart + block]).T
+
+    oshape = fm.shape
+
+    fm = fm.reshape(fm.shape[0]//window_size, window_size, len(rowend))
+
+    fm = chioce_top18(fm).numpy()
+    mask = (fm.reshape(-1, window_size*18).sum(axis = 1) != 0)
+    fm = fm.reshape(-1, window_size*18)[mask]
+    fmlist.append(fm)
+    indexlist.append(np.arange(teststart, teststart+block, window_size)[mask])
+    masklist.append(mask)
+  fm = np.concatenate(fmlist, axis = 0)  
+  index = np.concatenate(indexlist, axis = 0) 
+
+  timestep = 100
+  if(fm.shape[0]<timestep):
+    return np.array(0), fm.reshape(1, fm.shape[0], window_size, 18, 1), (minstart, maxend + 1), index
+    
+  tail = fm.shape[0]%timestep
+  if(tail == 0):
+    return fm.reshape(fm.shape[0]//timestep, timestep, window_size, 18, 1), np.array(0), (minstart, maxend + 1), index
+      
+  topdata, taildata = fm[:-tail], fm[-tail:].reshape(1, tail, window_size, 18, 1)
+  return topdata.reshape(topdata.shape[0]//timestep, timestep, window_size, 18, 1), taildata, (0, trueend), index
+def labeldata(vcfpath, contig, start, end, window_size, index):
+  goldl = []
+  if('chr' in contig):
+    contig = contig[3:]
+  for rec in pysam.VariantFile(vcfpath).fetch():
+
+    if(rec.contig != contig):
+      continue            
+    if((rec.info['SVTYPE'] == 'DEL')):
+      goldl.append([rec.start, rec.stop, rec.stop - rec.start, 1])
+        
+  
+    
+  goldl = (pd.DataFrame(goldl).sort_values([0, 1]).values).astype('float64')
+
+
+  y = []
+  for rec in index:
+        
+    if(((goldl[:,1:2] > rec) & (goldl[:,:1] < (rec+window_size))).sum() != 0):
+      y.append((((goldl[:,1:2] > rec) & (goldl[:,:1] < (rec+window_size))) * goldl[:,3:]).sum())
+
+
+    else:
+      y.append(0)
+  return (np.array(y)>0).astype('float32')
+def one_fn(contig, bamfilepath, outputpath = '', vcfpath = '', window_size = 200):
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 64)
+    data1, data2, startend, index = myshow(bamfile, contig, window_size)
+    start, end = startend
+    print(startend)
+    print(data1.shape, data2.shape)
+    print(index.shape)
     label, label1, label2 = np.array([0]), np.array([0]), np.array([0])
     if(vcfpath != ''):
-      label = labeldata(vcfpath, contig, start, end)
-      
-      if(data1.size != 1 and data2.size != 1):
-        label1, label2 = label[:data1.shape[0]*data1.shape[1]], label[data1.shape[0]*data1.shape[1]:]
+        label = labeldata(vcfpath, contig, start, end, window_size, index)
+        if(data1.size != 1 and data2.size != 1):
+            label1, label2 = label[:data1.shape[0]*data1.shape[1]], label[data1.shape[0]*data1.shape[1]:]
+    if(data1.size != 1 and data2.size != 1):
+        index1, index2 = index[:data1.shape[0]*data1.shape[1]], index[data1.shape[0]*data1.shape[1]:]
+
 
 
     if(data1.size != 1):
-      if(label1.size != 1):
-        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data1, label = label1)
-      else:
-        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data1, label = label)
-        
+        if(label1.size != 1):
+            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data1', data = data1, label = label1, index = index1)
+        else:
+            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data1', data = data1, label = label, index = index)
 
-      return 0 
+
+
     if(data2.size != 1):
-      if(label1.size != 1):
-        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data2, label = label2)
-      else:
-        np.savez(outputpath+contig+','+str(start)+','+str(end)+',data', data = data2, label = label)
+        if(label1.size != 1):
+            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data2', data = data2, label = label2, index = index2)
+        else:
+            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data2', data = data2, label = label, index = index)
+
+def feature_matrix(bamfilepath, outputpath = '', vcfpath = '', window_size = 200):
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+    for contig in [rec.contig for rec in bamfile.get_index_statistics()]:
+        one_fn(contig, bamfilepath, outputpath, vcfpath, window_size)
+
+
+
+import time
+from collections import Counter
+import numpy as np
+import pysam
+import time
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+def cigarinfo(cigararray, refstartarray, start, end, reccount, cigarweight):
+
+    a = tf.reshape(tf.cast(~((cigararray[:,0] == 1) | (cigararray[:,0] == 4)), 'float32'), [cigararray.shape[0], 1]) * cigararray
+    a1 = tf.reshape(a[:,1], [reccount, cigarweight])
+
+    a = tf.concat([cigararray, tf.reshape(tf.matmul(a1, tf.linalg.band_part(tf.ones([a1.shape[1] , a1.shape[1]], tf.float32), 0, -1)) + refstartarray, [cigararray.shape[0], 1])], axis = 1)
+
+
+    return tf.boolean_mask(a, (start <= a[:,-1]) & (a[:,-1] < end))
+    return tf.boolean_mask(a, (start <= a[:,-2]) & (a[:,-2] < end) & (a[:,0] == 1))[:,1:]
+
+
+
+def baseinfo(bamfile, contig, start, end):
+    
+
+    cigararray = []
+    readstartandend = []
+    refpositonlist = []
+    refpositonweight = []
+    substitionarray, deletionarray, substitionweight, deletionweight = [], [], [], []
+    nooverlap = True
+    qualityarray = []
+
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+    
+
+
+
+        cigararray.append(tf.keras.backend.flatten(tf.constant(AlignedSegment.cigartuples)))
+        readstartandend.append([AlignedSegment.reference_start-start, AlignedSegment.reference_end-start, AlignedSegment.mapping_quality, (1 - (AlignedSegment.query_alignment_length / AlignedSegment.infer_read_length()))**2])
+
+        nooverlap = False
+
+    
+    if(nooverlap):
+        print(dsahjdaj)
+    readstartandend = tf.constant(readstartandend, tf.float32)
+    cigararray = tf.keras.preprocessing.sequence.pad_sequences(cigararray)
+    reccount, cigarweight = cigararray.shape[0], int(cigararray.shape[1] / 2)
+    cigararray = cigararray.reshape(int(cigararray.size / 2), 2)
+
+    cigararray = cigarinfo(cigararray, readstartandend[:,:1], 0, end - start, reccount, cigarweight).numpy().astype('int64')
+    a = cigararray[(cigararray[:,0] == 2) & (cigararray[:,1] > 20)]
+    if(a.size == 0):
+        return []
+    a[:,-1] = a[:,-1] - a[:,-2] 
+    delsig = np.column_stack((a[:,-1:], a[:,-2:-1]))
+
+
+
+    loc = np.array(list(delsig))[:,0]
+    binnum = 20
+    binresult = (loc//binnum)
+    mc = Counter(binresult).most_common(1)[0]
+    sp = mc[1]
+    minv, maxv = mc[0]-1, mc[0]+1
+    tmp = np.median(np.array(list(delsig))[(minv<=binresult) *  (maxv>= binresult)], axis = 0).astype('int64')
+    tmp[0] = tmp[0]+start
+    return tmp.tolist()+[sp]
+    
+def baseinfo_main_binsaver(bamfilepath, delloc):
+
+
+
+
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+
+
+    delsig = []
+    for rec in delloc:
+        contig, start, end = str(rec[1]), int(rec[2]), int(rec[3])
+
+        delsig.append(baseinfo(bamfile, contig, start, end))
+    return delsig
   

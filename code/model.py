@@ -103,42 +103,152 @@ def init_model():
 
 from os import listdir
 from os.path import isfile, join
-def mergedeletioncall(predict, contig, startloc, window_size = 200):
+import time
+from collections import Counter
+import numpy as np
+import pysam
+import time
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+def cigarinfo(cigararray, refstartarray, start, end, reccount, cigarweight):
+
+    a = tf.reshape(tf.cast(~((cigararray[:,0] == 1) | (cigararray[:,0] == 4)), 'float32'), [cigararray.shape[0], 1]) * cigararray
+    a1 = tf.reshape(a[:,1], [reccount, cigarweight])
+
+    a = tf.concat([cigararray, tf.reshape(tf.matmul(a1, tf.linalg.band_part(tf.ones([a1.shape[1] , a1.shape[1]], tf.float32), 0, -1)) + refstartarray, [cigararray.shape[0], 1])], axis = 1)
+
+
+    return tf.boolean_mask(a, (start <= a[:,-1]) & (a[:,-1] < end))
+    return tf.boolean_mask(a, (start <= a[:,-2]) & (a[:,-2] < end) & (a[:,0] == 1))[:,1:]
+
+
+
+def baseinfo(bamfile, contig, start, end):
+    
+
+    cigararray = []
+    readstartandend = []
+    refpositonlist = []
+    refpositonweight = []
+    substitionarray, deletionarray, substitionweight, deletionweight = [], [], [], []
+    nooverlap = True
+    qualityarray = []
+
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+    
+
+
+
+        cigararray.append(tf.keras.backend.flatten(tf.constant(AlignedSegment.cigartuples)))
+        readstartandend.append([AlignedSegment.reference_start-start, AlignedSegment.reference_end-start, AlignedSegment.mapping_quality, (1 - (AlignedSegment.query_alignment_length / AlignedSegment.infer_read_length()))**2])
+
+        nooverlap = False
+
+    
+    if(nooverlap):
+        print(dsahjdaj)
+    readstartandend = tf.constant(readstartandend, tf.float32)
+    cigararray = tf.keras.preprocessing.sequence.pad_sequences(cigararray)
+    reccount, cigarweight = cigararray.shape[0], int(cigararray.shape[1] / 2)
+    cigararray = cigararray.reshape(int(cigararray.size / 2), 2)
+
+    cigararray = cigarinfo(cigararray, readstartandend[:,:1], 0, end - start, reccount, cigarweight).numpy().astype('int64')
+    a = cigararray[(cigararray[:,0] == 2) & (cigararray[:,1] > 20)]
+    if(a.size == 0):
+        return []
+    a[:,-1] = a[:,-1] - a[:,-2] 
+    delsig = np.column_stack((a[:,-1:], a[:,-2:-1]))
+
+
+
+    loc = np.array(list(delsig))[:,0]
+    binnum = 20
+    binresult = (loc//binnum)
+    mc = Counter(binresult).most_common(1)[0]
+    sp = mc[1]
+    minv, maxv = mc[0]-1, mc[0]+1
+    tmp = np.median(np.array(list(delsig))[(minv<=binresult) *  (maxv>= binresult)], axis = 0).astype('int64')
+    tmp[0] = tmp[0]+start
+    return [contig] + tmp.tolist()+[sp, 'DEL']
+    
+def baseinfo_main_binsaver(bamfilepath, delloc):
+
+
+
+
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+
+
+    delsig = []
+    for rec in delloc:
+        contig, start, end = str(rec[1]), int(rec[2]), int(rec[3])
+        bk = baseinfo(bamfile, contig, start, end)
+        if(len(bk) == 0):
+            continue
+        delsig.append(bk)
+    return delsig
+
+
+
+def mergedeletioncall(predict, contig, index, bamfilepath, window_size = 200):
     #contig: contig name in bam file, predict: 1d array, startloc: first prediction location in reference, window_size: the sub-region of a feature matrix included
     predict = (predict > 0.5).flatten()
     svlist = []
-    loc = startloc-window_size
+    count = -1
     insv = False
     for p in predict:
-        loc += window_size
+        count += 1
         if(p > 0):
             if(insv == False):
-                svstartloc = loc 
+                svstartloc = index[count]
                 insv = True
 
         else:
             if(insv == True):
-                svlist.append([contig, svstartloc, loc, 'DEL'])
+                svlist.append(['DEL', contig, svstartloc, index[count]])
                 insv = False
 
                 continue
-    return svlist
+    if(bamfilepath != ''):
+        return baseinfo_main_binsaver(bamfilepath, svlist)
+    else:
+        return [[rec[1], rec[2], rec[2] - rec[3], 'NA', 'DEL']]
 def train_fn(traindatapath = './',  testdatapath = './', trainedweightspath = 'savedweight', epochs = 1000):
     model = init_model()
     trainfilelist = [traindatapath+f for f in listdir(traindatapath) if(isfile(join(traindatapath, f)) and 'npz' in f)]
-    Xy = np.load(trainfilelist[0])
-    train = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
-    for loc in range(1, len(trainfilelist)):
+    count = 0
+    while(count<len(trainfilelist)):
+        Xy = np.load(trainfilelist[count])
+        count += 1
+        if(Xy['data'].shape[1] != 100):
+            continue
+    train = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'].astype('float32').reshape(-1, 100))).batch(80)
+    for loc in range(count, len(trainfilelist)):
+        
         Xy = np.load(trainfilelist[loc])
-        tmpds = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
+        if(Xy['data'].shape[1] != 100):
+            continue
+        tmpds = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'].astype('float32').reshape(-1, 100))).batch(80)
         train = train.concatenate(tmpds)
 
     testfilelist = [testdatapath+f for f in listdir(testdatapath) if(isfile(join(testdatapath, f)) and 'npz' in f)]
-    Xy = np.load(testfilelist[0])
-    test = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
-    for loc in range(1, len(testfilelist)):
+    count = 0
+    while(count<len(testfilelist)):
+        Xy = np.load(testfilelist[count])
+        count += 1
+        if(Xy['data'].shape[1] != 100):
+            continue
+    test = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'].astype('float32').reshape(-1, 100))).batch(80)
+    for loc in range(count, len(testfilelist)):
         Xy = np.load(testfilelist[loc])
-        tmpds = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'][np.newaxis,::].astype('float32'))).batch(80)
+        if(Xy['data'].shape[1] != 100):
+            continue
+        tmpds = tf.data.Dataset.from_tensor_slices((Xy['data'].astype('float32'), Xy['label'].astype('float32').reshape(-1, 100))).batch(80)
         test = train.concatenate(tmpds)    
     bestf1 = 0
     for epoch in range(epochs):
@@ -153,19 +263,21 @@ def train_fn(traindatapath = './',  testdatapath = './', trainedweightspath = 's
             print('New best F1: ', bestf1)
             print()
     return model
-def predict_fn(datapath = './', weightpath = 'trainedweights'):
+def predict_fn(datapath = './', weightpath = 'trainedweights', bamfilepath = '', window_size = 200):
     model = init_model()
-    model.load_weights(weightpath)
+    model.load_weights(weightpath) 
     filelist = [datapath+f for f in listdir(datapath) if(isfile(join(datapath, f)) and 'npz' in f)]
-    resultlist = [['contig', 'start', 'end', 'SVTYPE']]
+    resultlist = [['CONTIG', 'START', 'SVLEN', 'READ_SUPPORT', 'SVTYPE']]
     for datapath in filelist:
         Xy = np.load(datapath)
+        index = Xy['index']
         data = tf.data.Dataset.from_tensor_slices((Xy['data'])).batch(80)
         predict = model.predict(data)>0.5
-        contig, start = datapath.split(',')[0][len(datapath):], datapath.split(',')[1]
-        resultlist += mergedeletioncall(predict, contig, startloc = int(start))
+        datapath = datapath.split('/')[-1].split(',')
+        contig, start = datapath[0], datapath[1]
+        resultlist += mergedeletioncall(predict, contig, index, bamfilepath, window_size)
     df = pd.DataFrame(resultlist)
     new_header = df.iloc[0] 
     df = df[1:] 
     df.columns = new_header
-    (df.sort_values(['contig', 'start']).to_csv('result.csv'))
+    (df.sort_values(['CONTIG', 'START']).to_csv('result.csv'))

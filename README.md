@@ -86,7 +86,5 @@ python breaknet.py data_mode bamfile_path call_folder
 #### 2. Call deletion
 ```bash
 python breaknet.py call_mode call_folder trained_weight_path bamfilepath
-	
-  bamfilepath are optional, if bamfilepath are provided more precise breakpoint of deletion are computed.
 ```
 

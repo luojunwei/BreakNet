@@ -1,3 +1,26 @@
+import time
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import pysam
+from scipy.sparse import coo_matrix
+import time
+import numpy as np
+import tensorflow as tf
+import pysam
+import matplotlib.pyplot as plt
+import multiprocessing
+import os
+from multiprocessing import Process, Queue
+from multiprocessing.sharedctypes import Value, Array
+import time
+
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
 
 import time
 import numpy as np
@@ -11,663 +34,6 @@ import tensorflow as tf
 import pysam
 import matplotlib.pyplot as plt
 
-def allocation(cigartuples, posinref, readarray, qualityarray, start, end): 
-  posinread = 0
-
-  padinsertinfo = []
-
-  softclipinfo = []
-
-  cigararray = np.array(-1)
-
-  itemcount = 0
-
-
-  slicestart = 0
-  reachstart = False
-  reachend = False
-  softclippresent = False
-  softclipcount = 0
-  totalcount = readarray.shape[0]
-
-  if(posinref <= start): 
-
-
-    itemcount = -1
-
-    for item in cigartuples:
-
-      itemcount = itemcount + 1
-
-      if(item[0] in [0, 2, 7, 8]):
-
-        if(posinref + item[1] > start): # Meet start. Slice required.
-
-          #print('front early stopping')
-          #print('posinref is', posinref)
-          #cigararray = np.append(cigararray, np.ones(posinref + item[1] - start) * item[0])
-          cigartuples[itemcount] = [item[0], int(posinref + item[1] - start)] 
-          #print(item[1])
-          #print('push in cigararray ', cigartuples[itemcount])
-
-          if(item[0] in [0, 7, 8]): # For reference match
-            
-            slicestart = posinread + start - posinref
-            posinread = posinread + start - posinref
-            posinref = start
-
-          else: # For deletion
-
-            slicestart = posinread
-            posinref = start
-
-          reachstart = True
-
-          break
-
-
-        if(item[0] in [0, 7, 8]): 
-
-          posinread = posinread + item[1]
-          posinref = posinref + item[1]
-
-        else: # For deletion
-
-          posinref = posinref + item[1]
-
-        continue
-
-      
-      if(item[0] in [1, 4]): 
-
-        posinread = posinread + item[1]
-        if(item[0] == 4):
-          softclippresent = True
-          softclipcount = softclipcount + item[1]
-        continue
-      
-      if(item[0] == 5):
-        
-        softclippresent = True
-        softclipcount = softclipcount + item[1]
-        totalcount = totalcount + item[1]
-        continue
-        
-      print(str(item[0]),' CIGAR TAG DONT SUPPORT ')
-      return None
-        
-
-  else: 
-
-    if(posinref >= end): 
-
-      return None, np.ones(int(end - start)) * 6, np.column_stack((np.arange(start, end).reshape(int(end - start), 1), np.zeros((int(end - start), 1)))), np.ones(int(end - start)).reshape(int(end - start), 1) * 0
-    
-    else: 
-
-      readfrontpadding = np.column_stack((np.arange(start, posinref).reshape(int(posinref - start), 1), np.zeros((int(posinref - start), 1))))
-      readarray = np.row_stack((readfrontpadding, readarray))
-      qualityarray = np.row_stack((np.zeros((int(posinref - start), 1)), qualityarray))
-      cigararray = np.ones(int(posinref - start + 1)) * 6 # add 1 to deal with last slice
-      posinread = posinread + posinref - start
-      reachstart = True
-
-
-  if(reachstart == False): 
-    
-    return None, np.ones(int(end - start)) * 6, np.column_stack((np.arange(start, end).reshape(int(end - start), 1), np.zeros((int(end - start), 1)))), np.ones(int(end - start)).reshape(int(end - start), 1) * 0
-  
-  #print('posinref is', posinref)
-  #print('read position is ', readarray[slicestart: slicestart +10])
-
-  
-  if(posinref < end):
-    
-    usefront = False
-    usetail = True
-    
-    locincigartuples = 0
-    
-    cliploc = []
-    
-    for item in cigartuples[itemcount:]:
-      
-      locincigartuples = locincigartuples + 1
-      #print('current cigar is ', item, 'posinref is ', posinref, 'posinread is ', posinread, 'start is ', start, 'end is ', end)
-      #For reference match: posinref is match part first base
-      if(item[0] in [0, 7, 8]):
-        
-        usefront = True
-        
-        if(end <= item[1] + posinref): 
-
-          #print('posinref, end ', posinref, end)
-          cigararray = np.append(cigararray, np.ones(end - posinref) * item[0])
-          readarray = readarray[: posinread + end - posinref]
-          qualityarray = qualityarray[: posinread + end - posinref]
-          posinref = end
-          break
-          
-        else: 
-
-          cigararray = np.append(cigararray, np.ones(item[1]) * item[0])
-            
-          posinref = posinref + item[1]
-
-          posinread = posinread + item[1]
-          usefront = True
-
-          continue
-        
-      #For insertion
-      if(item[0] == 1):
-
-        cigararray = np.append(cigararray, np.ones(item[1]) * item[0])
-
-        posinread = posinread + item[1]
-
-        padinsertinfo.append([int(posinref - 1), int(item[1])])
-
-
-        continue
-
-   
-      if(item[0] == 2): 
-        
-        usefront = True
-        
-        if(end <= item[1] + posinref): 
-            
-          #print('del posinref, end ', posinref, end)
-          cigararray = np.append(cigararray, np.ones(end - posinref) * item[0])
-          readarray = np.row_stack((readarray[: posinread], np.column_stack((np.arange(posinref, end).reshape(end - posinref, 1), np.zeros(end - posinref).reshape(end - posinref, 1)))))
-          qualityarray = np.row_stack((qualityarray[: posinread], np.zeros(end - posinref).reshape(end - posinref, 1)))
-
-          posinref = end 
-          break
-          
-        else: #Not yet. Following parameter need update: posinref
-
-          cigararray = np.append(cigararray, np.ones(item[1]) * item[0])
-          paddelarray = np.column_stack((np.arange(posinref, posinref + item[1]).reshape(item[1], 1), np.zeros(item[1]).reshape(item[1], 1)))
-          #print(paddelarray.shape)
-          readarray = np.row_stack((np.row_stack((readarray[:posinread], paddelarray)), readarray[posinread:]))
-          qualityarray = np.row_stack((qualityarray[: posinread], np.row_stack((np.zeros(item[1]).reshape(item[1], 1), qualityarray[posinread: ]))))
-
-          posinref = posinref + item[1]
-          posinread = posinread + item[1]
-
-          usefront = True
-
-
-          continue
-
-      #For soft clip: posinref is first base follow with this softclip part
-      if(item[0] == 4): # We have not meet the end. Following parameter need update: posinread.
-        softcigartmp = np.ones(item[1]) * item[0]
-        if(locincigartuples == len(cigartuples[itemcount:])):
-         
-          usetail = False
-        
-        else:
-          
-          usetail = False
-          for cigarinfo in cigartuples[itemcount + locincigartuples:]:
-            if(cigarinfo[0] in [0, 2, 7, 8]):
-              usetail = True
-              
-
-        if(usefront == True and usetail == True):
-
-          softclipinfo.append([[int(posinref - 1), int(posinref)], readarray[posinread: posinread + item[1], 1]])
-          
-          softcigartmp[0], softcigartmp[-1] = softcigartmp[0] + 0.1, softcigartmp[-1] + 0.1
-          
-          cliploc.append(int(posinref - 1))
-          cliploc.append(int(posinref))
-        
-        elif(usefront == True):
-
-          softclipinfo.append([[int(posinref - 1)], readarray[posinread: posinread + item[1], 1]])
-          
-          softcigartmp[0] = softcigartmp[0] + 0.1
-          
-          cliploc.append(int(posinref - 1))
-        
-        else:
-          
-          softclipinfo.append([[-int(posinref)], readarray[posinread: posinread + item[1], 1]])
-          
-          softcigartmp[-1] = softcigartmp[-1] + 0.1
-          
-          cliploc.append(int(posinref))
-          
-          
-
-
-        
-        cigararray = np.append(cigararray, softcigartmp)
-          
-        posinread = posinread + item[1]
-
-        padinsertinfo.append([int(posinref - 1), int(item[1])])
-
-        softclippresent = True
-
-        softclipcount = softclipcount + item[1]
-
-
-        continue
-        
-      if(item[0] == 5): # Pass the hardclip cigar string.
-        
-        totalcount = totalcount + item[1]
-        
-        softclippresent = True
-
-        softclipcount = softclipcount + item[1]
-        
-        if(locincigartuples == len(cigartuples[itemcount:])):
-         
-          usetail = False
-        
-        else:
-          
-          usetail = False
-          for cigarinfo in cigartuples[itemcount + locincigartuples:]:
-            if(cigarinfo[0] in [0, 2, 7, 8]):
-              usetail = True
-              
-        hardlen = 1
-        tmppadnone = np.array([[None]])
-        
-        
-        if(usefront and usetail):
-          hardlen = 2
-          tmppadnone = np.array([[None], [None]])
-          
-          cliploc.append(int(posinref - 1))
-          cliploc.append(int(posinref))
-        elif(usefront == True):
-          
-          cliploc.append(int(posinref - 1))
-        
-        else:
-          
-          cliploc.append(int(posinref))
-          
-          
-        cigararray = np.append(cigararray, np.ones(hardlen) * item[0])
-
-        padinsertinfo.append([int(posinref - 1), hardlen])
-        
-        
-        paddelarray = np.column_stack((tmppadnone, np.zeros(hardlen).reshape(hardlen, 1)))
-          #print(paddelarray.shape)
-        if(posinread == 0):
-          readarray = np.row_stack((paddelarray, readarray[posinread:]))
-          qualityarray = np.row_stack((np.zeros(hardlen).reshape(hardlen, 1), qualityarray[posinread: ]))
-        elif(posinread == readarray.shape[0]):
-          readarray = np.row_stack((readarray, paddelarray))
-          qualityarray = np.row_stack((qualityarray, np.zeros(hardlen).reshape(hardlen, 1)))
-        else:
-          readarray = np.row_stack((np.row_stack((readarray[:posinread], paddelarray)), readarray[posinread:]))
-          qualityarray = np.row_stack((qualityarray[: posinread], np.row_stack((np.zeros(hardlen).reshape(hardlen, 1), qualityarray[posinread: ]))))
-
-        
-        posinread = posinread + hardlen
-
-        continue
-        
-      print(str(item[0]),' CIGAR TAG DONT SUPPORT ')
-      return None
-
-
-  #readarray = readarray[slicestart: posinread + end - posinref]
-  
-  #print(cigarinfodict)
-  if(posinref < end): #Need padding.
-    readrearpadding = np.column_stack((np.arange(posinref, end).reshape(end - posinref, 1), np.zeros(end - posinref).reshape(end - posinref, 1)))
-    readarray = np.row_stack((readarray, readrearpadding))
-    qualityarray = np.row_stack((qualityarray, np.zeros(end - posinref).reshape(end - posinref, 1)))
-    cigararray = np.append(cigararray, np.ones(end - posinref) * 6)
-  
-  return np.array(padinsertinfo), cigararray[1:], readarray[slicestart:], qualityarray[slicestart:], [softclippresent, softclipcount / totalcount , softclipinfo, cliploc]
-
-def paddel(AlignedSegment, start, end):
-
-  grp = np.array(AlignedSegment.get_reference_positions(True))#[AlignedSegment.query_alignment_start: AlignedSegment.query_alignment_end]
-  grp = grp.reshape(grp.size, 1)
-  read = pd.DataFrame(list(AlignedSegment.query_sequence)).replace({'A': 10, 'T': 15, 'G': 20, 'C': 25}).values.reshape(grp.size,1)
-  readarray = np.column_stack((grp, read))
-
-  pos = 0
-  i  = 0
-  delpos = 0
-
-  '''print(readarray.T[0].tolist())
-  print(readarray.T[1].tolist())'''
-  #print(grp[-10:].T)
-
-  cigartuples = AlignedSegment.cigartuples
-  #print(grp[-cigartuples[-1][1] - 10:].T)
-  if(cigartuples == None):
-    print('The alignment does not give CIGAR string')
-    return None
-
-  while(cigartuples[i][0] not in [0, 7, 8]): # Get TRUE reference start location
-    if(cigartuples[i][0] != 5):
-      pos = cigartuples[i][1] + pos
-      if(cigartuples[i][0] == 2):
-        delpos = cigartuples[i][1] + delpos
-
-    i = i + 1
-
-  '''if(grp[0] == None):#test for insertion or softclip on begin
-    tmpbase = np.array([readarray[0][0] - 1, 0]).reshape(1,2)
-    readarray = np.row_stack((tmpbase, readarray))'''
-  #print('origin readarray is ', readarray.T.tolist())
-  qqarray = np.array(AlignedSegment.query_qualities)
-  if(qqarray.size == 1):
-    qqarray = np.zeros((readarray.shape[0], 1))
-  else:
-    qqarray = qqarray.reshape((readarray.shape[0], 1))
-
-  iarray, cigararray, readarray, qualityarray, softclipinfo = allocation(cigartuples, int(grp[pos] - delpos), readarray, qqarray, start, end)
-  if(softclipinfo[0] == True):
-    softclipinfo.append(read)
-  else:
-    softclipinfo.append([])
-
-  return readarray, iarray, cigararray, qualityarray, softclipinfo
-
-
-def dropselectcigartag(pcigararray, selectedtag, refseq, filter = False, preadarray = None, cutvalue = 1, keepfrontsoftclip = True):
-  for tag in selectedtag:
-    try:
-      outputset = set(np.nonzero((pcigararray == tag).sum(axis = 0) == 0)[0].tolist()) & outputset
-    except:
-      outputset = set(np.nonzero((pcigararray == tag).sum(axis = 0) == 0)[0].tolist())
-
-  if(filter == True):
-    outputset = set(np.nonzero((preadarray > 0).sum(axis = 0, keepdims = True) > (cutvalue))[1].tolist()) & outputset
-
-  if(keepfrontsoftclip):
-
-    outputset = set(np.nonzero((pcigararray == 4.1).sum(axis = 0) != 0)[0].tolist()) & outputset
-
-  outputset = set(np.nonzero(refseq > -1)[0].tolist()) | outputset
-  return np.sort(np.array(list(outputset)))
-
-def myshow(preadarray, pcigararray, qualityarray, refseq, seqbase, excludelist = [1, 4, 4.1], includecagtag = [2], filter = False, cutvalue = 1, maxdot = 200, softread = [], showpic = False, minrow = 18, maxrow = 18):
-  #print(preadarray.shape, pcigararray.shape, qualityarray.shape)
-  pltsoft = False
-  if(len(softread) > 0):
-    psoftarray = (np.array(softread[:,1]).reshape(preadarray.shape[0], 1).astype('float32') * (preadarray > 0).astype('float32'))
-    pltsoft = True
-  if(len(excludelist) > 0):
-
-    columnkeeped = dropselectcigartag(pcigararray, excludelist, refseq, filter, preadarray, cutvalue)
-
-    preadarray = preadarray[:, columnkeeped]
-    qualityarray = qualityarray[:, columnkeeped]
-    if(pltsoft == True):
-      psoftarray = psoftarray[:, columnkeeped]
-
-    slicedpcigararray = pcigararray[:, columnkeeped]
-    for cigartag in includecagtag:
-      try:
-        spotarray = spotarray + (slicedpcigararray == cigartag) * cigartag
-      except:
-        spotarray = (slicedpcigararray == cigartag) * cigartag
-  else:
-
-    slicedpcigararray = pcigararray
-    for cigartag in includecagtag:
-      try:
-        spotarray = spotarray + (slicedpcigararray == cigartag) * cigartag
-      except:
-        spotarray = (slicedpcigararray == cigartag) * cigartag
-
-  cspotarray = spotarray[:,:200][np.argsort(spotarray[:200].sum(axis = 1))[::-1]]
-  for loc in range(200, spotarray.shape[1], 200):
-    tmp = spotarray[:,loc:loc+200][np.argsort(spotarray[:,loc:loc+200].sum(axis = 1))[::-1]]
-    cspotarray = np.column_stack((cspotarray, tmp))
-  spotarray=cspotarray 
-  if(preadarray.shape[0] < minrow):
-    pt = [preadarray, spotarray, psoftarray, qualityarray]
-    padrownumber = minrow - preadarray.shape[0]
-    column_number = preadarray.shape[1]
-    for locinpt in range(4):
-      
-      pt[locinpt] = np.row_stack((pt[locinpt], np.zeros((padrownumber, column_number))))
-
-    preadarray, spotarray, psoftarray, qualityarray = pt[0], pt[1], pt[2], pt[3]
-  
-  if(preadarray.shape[0] > maxrow and showpic == False):
-
-    preadarray, spotarray, psoftarray, qualityarray = preadarray[:maxrow], spotarray[:maxrow], psoftarray[:maxrow], qualityarray[:maxrow]
-
-    
-  cliparray = np.ones((preadarray.shape[0], 1)) * seqbase
-
-  if(showpic):
-    loc = 0
-    print('Read sequence')
-    plt.matshow(preadarray)
-    plt.show()
-  else:
-    timestep = 100
-    fm = (spotarray>0).astype('float32').T
-    fm = fm.reshape(fm.size//(200 * 18), 200, 18, 1)
-    if(fm.shape[0]<timestep):
-      return np.array(0), fm.reshape(1, fm.shape[0], 200, 18, 1)
-    
-    tail = fm.shape[0]%timestep
-    if(tail == 0):
-      return fm.reshape(fm.shape[0]//timestep, timestep, 200, 18, 1), np.array(0)
-      
-    topdata, taildata = fm[:-tail], fm[-tail:].reshape(1, tail, 200, 18, 1)
-    
-    
-    return topdata.reshape(topdata.shape[0]//timestep, timestep, 200, 18, 1), taildata
-
-
-
-
-
-def pileupf(bamfile, contig, start, end, droplq = False, dropvalue = 0.8):
-  window_size = 200
-  samplelocation = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
-  end = samplelocation[-1, 1] 
-  totalstarttime = time.time()
-  locationlist = []
-  readlist = []
-  insertlist = []
-  insertinfo = dict()
-  keylist = []
-  cigarlist = []
-  qualitylist = []
-  softcliplist = []
-
-  debug = []
-  
-  depth = 0
-  paddeltime = 0
-  fetchtime = time.time()
-  seqbase = np.zeros((1, end - start)).astype('float32')
-  overlap = False
-  
-  for AlignedSegment in bamfile.fetch(contig, start, end):
-    
-    #debug.append(AlignedSegment)
-    if(AlignedSegment.reference_start <= start):
-        frontloc = 0
-        whichstart = start
-    else:
-      frontloc = AlignedSegment.reference_start - start
-      whichstart = AlignedSegment.reference_start
-      
-    if(AlignedSegment.reference_end >= (end - 1)):
-      tailloc = end - start - 1
-    else:
-      tailloc = AlignedSegment.reference_end - start
-    paddelstarttime = time.time()
-    
-    read, iarray, cigararray, qualityarray, softclipinfo = paddel(AlignedSegment, start, end)
-    ratio = softclipinfo[1]
-    tmp = seqbase[:,frontloc: tailloc + 1] + ratio
-    for cclip in set(softclipinfo[3]):
-      tmp[:,cclip - whichstart] = tmp[:,cclip - whichstart] + ratio
-    fillblank = tmp.mean()
-    seqbase[:,frontloc: tailloc + 1] = (np.column_stack((np.array([[fillblank]]), tmp))[:,:-1] + tmp + np.column_stack((tmp, np.array([[fillblank]])))[:,1:])/3
-    
-    
-    if(droplq and softclipinfo[1] > dropvalue):
-      continue
-    overlap = True
-    paddeltime = - paddelstarttime + time.time() + paddeltime
-    locationlist.append(read[:,0])
-    readlist.append(np.array(read[:,1]).astype('float32'))
-    insertlist.append(iarray)
-    cigarlist.append(cigararray.astype('float32'))
-    qualitylist.append(qualityarray.flatten().astype('float32'))
-    softcliplist.append(softclipinfo)
-    depth = depth + 1
-    '''print(read.shape)
-    print(cigararray.shape)'''
-
-    if(type(iarray) != np.ndarray):
-      continue
-
-    for item in iarray:
-      cloc = item[0]
-      if((item[0]) in insertinfo):
-        if(cloc == lastloc):
-          insertinfo[item[0]] = insertinfo[item[0]] + item[1]
-        else:
-          insertinfo[item[0]] = max(insertinfo[item[0]], int(item[1]))
-      else:
-        insertinfo[item[0]] = item[1]
-        keylist.append(item[0])
-      lastloc = cloc
-  #print('fetch time = ', time.time() - fetchtime, time.time() - totalstarttime)
-  
-  keylist = np.sort(np.array(keylist))
-
-  #print(keylist)
-  '''print(readlist)
-  print()
-  print(insertinfo)'''
-
-  #print(insertinfo)
-  #readposlist = [0 for i in range(len(readlist))]
-
-  refseq = np.arange(start, end)
-  bias = 0
-  for key in keylist:
-    if(key == (end - 1)):
-      print('end in insertioninfo')
-      return 0
-      
-    insert = - np.ones(insertinfo[key])
-    refseq = np.append(np.append(refseq[:key+1 + bias-start], insert), refseq[key+1+bias-start: ])
-    bias = bias + insertinfo[key]
-  
-  if(overlap == False):
-    return np.zeros((1, end - start)), np.ones((1, end - start)) * 6, np.zeros((1, end - start)), refseq, np.array([[False, 0]]), seqbase
-  readcount = 0
-  state = False
-  readlisttime = time.time()
-  
-  cc = 0
-  
-  if(True):
-    pallarray = 'None'
-    for read in readlist:
-    
-      refloc = start
-      locinread = 0
-      insertcount = 0
-      parray = 'None'
-
-
-      for key in keylist:
-
-        #print(insertlist[readcount][insertcount])
-        while(True):
-          slicelength = key + 1 - refloc
-          refloc = refloc + slicelength
-          insertsizeofrfortkey = 0
-          insertpresentonkey = False
-          if(insertlist[readcount].shape[0] > insertcount and key == insertlist[readcount][insertcount][0]):
-            
-            onreadinsert = insertlist[readcount][insertcount][1]
-
-            insertpresentonkey = True
-            while(insertlist[readcount].shape[0] > (insertcount + 1) and key == insertlist[readcount][insertcount + 1][0]):
-              insertcount = insertcount + 1
-              onreadinsert = onreadinsert + insertlist[readcount][insertcount][1]
-            slicelength = slicelength + onreadinsert
-
-
-          tmpparray = np.array([read[locinread: locinread + slicelength], cigarlist[readcount][locinread: locinread + slicelength], qualitylist[readcount][locinread: locinread + slicelength]])
-          locinread = locinread + slicelength
-
-          if(insertpresentonkey):
-
-            remainlengh = insertinfo[key] - onreadinsert
-            insertcount = insertcount + 1
-            if(remainlengh > 0):
-              
-              tmpparray = np.column_stack((tmpparray, np.ones((3, remainlengh)) * np.array([[0.], [6.], [0.]])))
-          
-          else:
-
-            tmpparray = np.column_stack((tmpparray, np.ones((3, insertinfo[key])) * np.array([[0.], [6.], [0.]])))
-
-
-          try:
-
-            parray = np.column_stack((parray, tmpparray))
-          
-          except:
-
-            parray = tmpparray
-          
-  
-          break
-
-      
-      if(locinread !=  len(read) and len(keylist) > 0):
-
-        parray = np.column_stack((parray, np.array([read[locinread: ], cigarlist[readcount][locinread: ], qualitylist[readcount][locinread: ]])))
-        
-        #print()
-      else:
-
-        parray = np.array([read[locinread: ], cigarlist[readcount][locinread: ], qualitylist[readcount][locinread: ]])
-      
-      readcount = readcount + 1
-        
-      if(state):
-
-        pallarray = np.column_stack((pallarray, parray))
-        #print(parray.shape)
-
-
-          
-      else:
-
-        pallarray = parray
-        readlength = parray.shape[1]
-        state = True
-        
-  
-  #print('readlisttime',time.time() - readlisttime)
-  #print(time.time() - totalstarttime, paddeltime)
-  
-  return pallarray[0].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[1].reshape(int(pallarray.shape[1] / readlength), readlength), pallarray[2].reshape(int(pallarray.shape[1] / readlength), readlength), refseq, np.array(softcliplist, dtype = 'object'), seqbase
 def fx(alist, blist, clist, rowcount):
     for b in blist:
         alist.append(b)
@@ -706,32 +72,43 @@ def labeldata(vcfpath, contig, start, end):
     else:
       y.append(0)
   return (np.array(y)>0).astype('float32')
-import time
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import pysam
-from scipy.sparse import coo_matrix
-import time
-import numpy as np
-import tensorflow as tf
-import pysam
-import matplotlib.pyplot as plt
-def fx(alist, blist, clist, rowcount):
-  for b in blist:
-    alist.append(b)
-    clist.append(rowcount)
-def chioce_top18(tensor):
-  batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
-  tensor = tf.concat([tensor, tf.zeros([batch_size, window_size, 18])], axis = 2)
-  return tf.reshape(tf.gather(tensor, tf.argsort(tf.reduce_sum(tensor, 1, keepdims = True), axis = 2), axis=2, batch_dims=1)[:,:,:,-18:], [tensor.shape[0], tensor.shape[1], 18, 1])
 
-def myshow(bamfile, contig, window_size = 200):
-  block = 10000000
-  fmlist = []
-  masklist = []
-  indexlist = []
-  for teststart in range(0, 500000000, block):
+
+
+
+def cigarinfo(cigararray, refstartarray, start, end, reccount, cigarweight):
+
+    a = (~((cigararray[:,0] == 1) | (cigararray[:,0] == 4))).reshape(cigararray.shape[0], 1) * cigararray
+    a1 = a[:,1].reshape((reccount, cigarweight))
+    a1 = (a1 @ np.triu(np.ones((a1.shape[1] , a1.shape[1])), k=0)) + refstartarray
+    a2 = (a1 != 0) * (np.arange(a1.shape[0]).reshape(a1.shape[0], 1))
+    a = np.concatenate([cigararray, a2.reshape((cigararray.shape[0], 1)), a1.reshape([cigararray.shape[0], 1])], axis = 1)
+    
+
+    return a[(start <= a[:,-1]) & (a[:,-1] < end)]
+
+
+
+def fx(alist, blist, clist, rowcount):
+    for b in blist:
+        alist.append(b)
+        clist.append(rowcount)
+
+
+
+def chioce_top18(tensor, geno = False):
+    batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+    if(rowcount < 32):
+        tensor = np.concatenate([tensor, np.zeros([batch_size, window_size, 32-rowcount], dtype = np.float32)], axis = 2)
+    if(geno == True):
+        return tensor[:,:,:32].reshape(tensor.shape[0], tensor.shape[1], 32, 1)
+    index = np.argsort(tensor.sum(axis = 1, keepdims = True), axis = 2)[:,:,-32:].reshape(-1, 32)
+    l = []
+    for loc in range(batch_size):
+        l.append(tensor[loc][:,index[loc]])
+    return np.concatenate(l, axis = 0).reshape(tensor.shape[0], tensor.shape[1], 32, 1)
+
+def delinfo(bamfile, contig, start, end, window_size = 200):
     collist = []
     rowlist = []
     rowend = []
@@ -739,64 +116,338 @@ def myshow(bamfile, contig, window_size = 200):
     maxend = 0
     minstart = 999999999
     rowcount = 0
-    overlap = False
-    for AlignedSegment in bamfile.fetch(contig, teststart, teststart + block):
-      overlap = True
-      count += 1
-      seqqosition =(AlignedSegment.get_reference_positions())
-      cstart = seqqosition[0]
-      cend = seqqosition[-1]
-      seqqosition = set(range(cstart, cend+1)) - set(seqqosition)
-      newrow = True
-      loc = -1
-      for oneend in rowend:
-        loc += 1
-        if(oneend<cstart):
-          fx(collist, seqqosition, rowlist, loc)
-          rowend[loc] = cend
-          newrow = False
-          break
-      if(newrow == True and (rowcount < 100)):
-        rowcount += 1
-        rowend.append(cend)
-        fx(collist, seqqosition, rowlist, len(rowend)-1)
-      if(maxend<cend):
-        maxend = cend
-      if(minstart>cstart):
-        minstart=cstart
-    if(overlap == False):
-      trueend = teststart
-      continue
-    minstart = min(teststart, minstart)
-    maxend = max(teststart+block, maxend + 1)
+    cigararray = []
+    readstartandend = []
+    maxlen = 0
+    nooverlap = False
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+
+
+        seqqosition = np.array(AlignedSegment.get_reference_positions())
+        if((seqqosition[-1] - seqqosition[0])<1000):
+            continue
+        nooverlap = True
+        count += 1
+        
+        readstartandend.append([seqqosition[0] - start])
+        seqqosition = seqqosition[(seqqosition>=start) & (seqqosition<end)]
+        cstart = seqqosition[0]
+        cend = seqqosition[-1]
+        seqqosition = set(range(cstart, cend+1)) - set(seqqosition)
+        newrow = True
+        loc = -1
+        
+        cigararray.append((np.array(AlignedSegment.cigartuples).flatten()))
+        if(maxlen<cigararray[-1].size):
+            maxlen = cigararray[-1].size
+            
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                fx(collist, seqqosition, rowlist, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True):
+            rowcount += 1
+            rowend.append(cend)
+            fx(collist, seqqosition, rowlist, len(rowend)-1)
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+    if(nooverlap == False):
+        return False, 0, 0
+    for loc in range(len(cigararray)):
+        cigararray[loc].resize(maxlen, refcheck=False)
+    cigararray = np.array(cigararray).astype('float32')
+    reccount, cigarweight = cigararray.shape[0], int(cigararray.shape[1] / 2)
+    cigararray = cigararray.reshape(int(cigararray.size / 2), 2)
+    #print('cigarinfo')
+    cigararray = cigarinfo(cigararray, np.array(readstartandend), 0, end - start, reccount, cigarweight)
+
+    a = cigararray[(cigararray[:,0] == 1)]
+    
     row  = np.array(rowlist)
     col  = np.array(collist)-minstart
     data = np.ones(col.size, dtype = np.float32)
-    fm = (coo_matrix((data, (row, col)), shape=(len(rowend), (maxend-minstart))).toarray()[:,teststart - minstart:teststart - minstart + block]).T
+    return True, (coo_matrix((data, (row, col)), shape=(len(rowend), end-start)).toarray()).T, coo_matrix((np.log(a[:, 1]), (a[:,2], a[:,3])), shape=(int((a[:,2].max()))+1, (end-start))).toarray().T
+def insloc(rs, start, end, cigartuples, ins_collist, ins_rowlist, ins_data, row):
+    loc = rs
+    rec = False
+    for item in cigartuples:
+        if(item[0] not in [1, 4, 5, 6]):
+            loc += item[1]
+            if(rec == False and loc>=start):
+                rec = True
+            if(loc>=end):
+                break
+        elif(rec == True and item[0] == 1):
+            ins_collist.append(loc)
+            ins_rowlist.append(row)
+            ins_data.append(item[1])
+def fx(alist, blist, clist, rowcount):
+    for b in blist:
+        alist.append(b)
+        clist.append(rowcount)
+def delinfo(bamfile, contig, start, end, window_size = 200):
+    collist = []
+    rowlist = []
+    rowend = []
+    ins_collist = []
+    ins_rowlist = []
+    ins_data = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
 
-    oshape = fm.shape
+    maxlen = 0
+    nooverlap = False
+    for AlignedSegment in bamfile.fetch(contig, start, end):
 
-    fm = fm.reshape(fm.shape[0]//window_size, window_size, len(rowend))
 
-    fm = chioce_top18(fm).numpy()
-    mask = (fm.reshape(-1, window_size*18).sum(axis = 1) != 0)
-    fm = fm.reshape(-1, window_size*18)[mask]
-    fmlist.append(fm)
-    indexlist.append(np.arange(teststart, teststart+block, window_size)[mask])
-    masklist.append(mask)
-  fm = np.concatenate(fmlist, axis = 0)  
-  index = np.concatenate(indexlist, axis = 0) 
+        seqqosition = np.array(AlignedSegment.get_reference_positions())
+        if((seqqosition[-1] - seqqosition[0])<1000):
+            continue
+        nooverlap = True
+        count += 1
+        
+        rs = seqqosition[0]
+        seqqosition = seqqosition[(seqqosition>=start) & (seqqosition<end)]
+        cstart = seqqosition[0]
+        cend = seqqosition[-1]
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+        seqqosition = set(range(cstart, cend+1)) - set(seqqosition)
+        newrow = True
+        loc = -1
 
-  timestep = 100
-  if(fm.shape[0]<timestep):
-    return np.array(0), fm.reshape(1, fm.shape[0], window_size, 18, 1), (minstart, maxend + 1), index
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                fx(collist, seqqosition, rowlist, loc)
+                insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True):
+            rowcount += 1
+            rowend.append(cend)
+            fx(collist, seqqosition, rowlist, len(rowend)-1)
+            insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, len(rowend)-1)
+        
+    if(nooverlap == False):
+        return False, 0, 0
+
     
-  tail = fm.shape[0]%timestep
-  if(tail == 0):
-    return fm.reshape(fm.shape[0]//timestep, timestep, window_size, 18, 1), np.array(0), (minstart, maxend + 1), index
-      
-  topdata, taildata = fm[:-tail], fm[-tail:].reshape(1, tail, window_size, 18, 1)
-  return topdata.reshape(topdata.shape[0]//timestep, timestep, window_size, 18, 1), taildata, (0, trueend), index
+    row  = np.array(rowlist)
+    col  = np.array(collist)-minstart
+    data = np.ones(col.size, dtype = np.float32)
+    return True, (coo_matrix((data, (row, col)), shape=(len(rowend), end-start)).toarray()).T, coo_matrix((np.log(ins_data), (ins_rowlist, ins_collist)), shape=((len(rowend), end-start))).toarray().T
+def insloc(rs, start, end, cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist,  row):
+    loc = rs
+    rec = False
+    for item in cigartuples:
+        if(item[0] not in [1, 4, 5, 6]):
+            if(rec == False and loc>=start):
+                rec = True
+            if(rec == True and item[0] == 2):
+                for bias in range(min(item[1], end - loc)):
+                    del_collist.append(loc+bias)
+                    del_rowlist.append(row)
+
+                    
+            loc += item[1]
+            
+            
+            if(loc>=end):
+                break
+        elif(rec == True and item[0] == 1):
+            ins_collist.append(loc)
+            ins_rowlist.append(row)
+            ins_data.append(item[1])
+def fx(alist, blist, clist, rowcount):
+    for b in blist:
+        alist.append(b)
+        clist.append(rowcount)
+def delinfo(bamfile, contig, start, end, window_size = 200):
+    collist = []
+    rowlist = []
+    del_collist = []
+    del_rowlist = []
+    del_data = []
+    rowend = []
+    ins_collist = []
+    ins_rowlist = []
+    ins_data = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
+
+    maxlen = 0
+    nooverlap = False
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+
+
+        nooverlap = True
+        count += 1
+        
+        rs = AlignedSegment.reference_start
+
+        cstart = max(rs, start)
+        cend = min(AlignedSegment.reference_end, end)
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+
+        newrow = True
+        loc = -1
+
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True):
+            rowcount += 1
+            rowend.append(cend)
+            insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, len(rowend)-1)
+        
+    if(nooverlap == False):
+        return False, 0, 0
+
+    return True, (coo_matrix((np.ones(len(del_rowlist)), (del_rowlist, del_collist)), shape=(len(rowend), end-start)).toarray()).T.astype('float32'), coo_matrix((np.log(ins_data), (ins_rowlist, ins_collist)), shape=((len(rowend), end-start))).toarray().T.astype('float32')
+
+
+def indelinfo(bamfile, contig, start, end, window_size=200, geno = False):
+
+    st = time.time()
+    SIGNAL, t1, t2 = delinfo(bamfile, contig, start, end)
+    if(SIGNAL == False):
+        return False, 0, 0
+
+    return True, np.concatenate((chioce_top18(t1.reshape(-1, window_size, t1.shape[1]), geno), chioce_top18(t2.reshape(-1, window_size, t2.shape[1]), geno)), axis = -1), time.time() - st
+
+
+def chioce_top18(tensor, geno = False):
+    k = 32
+    batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+    if(rowcount < k):
+        tensor = np.concatenate([tensor, np.zeros([batch_size, window_size, k-rowcount], dtype = np.float32)], axis = 2)
+    if(geno == True):
+        return tensor[:,:,:k].reshape(tensor.shape[0], tensor.shape[1], k, 1)
+    index = np.argsort(tensor.sum(axis = 1, keepdims = True), axis = 2)[:,:,-k:].reshape(-1, k)
+    l = []
+    for loc in range(batch_size):
+        l.append(tensor[loc][:,index[loc]])
+    return np.concatenate(l, axis = 0).reshape(tensor.shape[0], tensor.shape[1], k, 1)
+###########################
+def insloc(rs, start, end, cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist,  row):
+    loc = rs
+    rec = False
+    for item in cigartuples:
+        if(item[0] not in [1, 4, 5, 6]):
+            if(rec == False and loc>=start):
+                rec = True
+            if(rec == True and item[0] == 2):
+                for bias in range(min(item[1], end - loc)):
+                    del_collist.append(loc+bias)
+                    del_rowlist.append(row)
+
+                    
+            loc += item[1]
+            
+            
+            if(loc>=end):
+                break
+        elif(rec == True and item[0] == 1):
+            ins_collist.append(loc)
+            ins_rowlist.append(row)
+            ins_data.append(item[1])
+############################
+
+def myshow(contig, bamfilepath, start, end, outputpath = '', vcfpath = '', window_size = 200):
+       
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 64)
+
+    
+    samplelocation = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
+    end = samplelocation[-1, 1]  
+    ######################################
+    maxread = 32
+    collist = []
+    rowlist = []
+    del_collist = []
+    del_rowlist = []
+    del_data = []
+    rowend = []
+    ins_collist = []
+    ins_rowlist = []
+    ins_data = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
+
+    maxlen = 0
+    nooverlap = False
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+
+
+
+        nooverlap = True
+        count += 1
+        
+        rs = AlignedSegment.reference_start
+
+        cstart = max(rs, start)
+        cend = min(AlignedSegment.reference_end, end)
+        
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+
+        newrow = True
+        loc = -1
+
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True and (rowcount <= 500)):
+            rowcount += 1
+            rowend.append(cend)
+            insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, len(rowend)-1)
+        
+    geno = False
+    t1, t2 = (coo_matrix((np.ones(len(del_rowlist)), (del_rowlist, del_collist)), shape=(len(rowend), end-start)).toarray()).T, coo_matrix((np.log(ins_data), (ins_rowlist, ins_collist)), shape=((len(rowend), end-start))).toarray().T
+    data = np.concatenate((chioce_top18(t1.reshape(-1, window_size, t1.shape[1]), geno), chioce_top18(t2.reshape(-1, window_size, t2.shape[1]), geno)), axis = -1)
+    
+    
+    
+    ##################################################
+
+    mask = data.reshape(((end-start)//window_size, window_size * maxread*2)).sum(axis =1) != 0
+    data = data[mask]
+    index = np.arange(start, end, window_size)[mask]
+    np.savez_compressed(outputpath+contig+','+str(start)+','+str(end)+',data', data = data, label = np.array([0]), index = index)
+    
+    
+
+
+
 def labeldata(vcfpath, contig, start, end, window_size, index):
   goldl = []
   if('chr' in contig):
@@ -823,49 +474,39 @@ def labeldata(vcfpath, contig, start, end, window_size, index):
     else:
       y.append(0)
   return (np.array(y)>0).astype('float32')
-def one_fn(contig, bamfilepath, outputpath = '', vcfpath = '', window_size = 200):
-    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 64)
-    data1, data2, startend, index = myshow(bamfile, contig, window_size)
-    start, end = startend
-    print(startend)
-    print(data1.shape, data2.shape)
-    print(index.shape)
-    label, label1, label2 = np.array([0]), np.array([0]), np.array([0])
-    if(vcfpath != ''):
-        label = labeldata(vcfpath, contig, start, end, window_size, index)
-        if(data1.size != 1 and data2.size != 1):
-            label1, label2 = label[:data1.shape[0]*data1.shape[1]], label[data1.shape[0]*data1.shape[1]:]
-    if(data1.size != 1 and data2.size != 1):
-        index1, index2 = index[:data1.shape[0]*data1.shape[1]], index[data1.shape[0]*data1.shape[1]:]
 
 
-
-    if(data1.size != 1):
-        if(label1.size != 1):
-            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data1', data = data1, label = label1, index = index1)
-        else:
-            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data1', data = data1, label = label, index = index)
-
-
-
-    if(data2.size != 1):
-        if(label1.size != 1):
-            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data2', data = data2, label = label2, index = index2)
-        else:
-            np.savez(outputpath+contig+','+str(start)+','+str(end)+',data2', data = data2, label = label, index = index)
-
-def feature_matrix(bamfilepath, outputpath = '', vcfpath = '', window_size = 200):
+def feature_matrix(bamfilepath, outputpath = '', vcfpath = '', window_size = 200, max_worker = 16):
     bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
-    for contig in [rec.contig for rec in bamfile.get_index_statistics()]:
-        one_fn(contig, bamfilepath, outputpath, vcfpath, window_size)
+    contig2length = {}
+    block = 5000000
+    includecontig = [str(i) for i in range(12, 23)]
+    for count in range(len(bamfile.get_index_statistics())):
+        contig2length[bamfile.get_index_statistics()[count].contig] = bamfile.lengths[count]
+    for contig in includecontig:
+        for AlignedSegment in bamfile.fetch(contig):
+            start = AlignedSegment.reference_start
+            break
+        while((start + 2*block) <  contig2length[contig]):
+            while(True):
+                if(len(multiprocessing.active_children()) < max_worker):
+                    print('working on contig = ', contig, start, start + block)
+                    contig = str(contig)
+                    multiprocessing.Process(target=myshow, args=(contig, bamfilepath, start, start + block, outputpath, vcfpath, window_size)).start()
+                    break
+                else:
+                    time.sleep(2)
+            start +=  block
+        while(True):
+            if(len(multiprocessing.active_children()) < max_worker):
+                print('working on contig = ', contig, start, start + block)
+                contig = str(contig)
+                multiprocessing.Process(target=myshow, args=(contig, bamfilepath, start, start + block, outputpath, vcfpath, window_size)).start()
+                break
+            else:
+                time.sleep(2)
 
 
-
-import time
-from collections import Counter
-import numpy as np
-import pysam
-import time
 import time
 import pysam
 from pysam import VariantFile
@@ -873,79 +514,1274 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-def cigarinfo(cigararray, refstartarray, start, end, reccount, cigarweight):
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Input, Dense, Conv2D, DepthwiseConv2D, BatchNormalization, Dropout, GlobalAveragePooling2D, Reshape, multiply, add, Activation
+import multiprocessing
+import os
+from multiprocessing import Process, Queue
+from multiprocessing.sharedctypes import Value, Array
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+from scipy.sparse import coo_matrix
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import threading
+#tf.config.set_visible_devices([], 'GPU')
 
-    a = tf.reshape(tf.cast(~((cigararray[:,0] == 1) | (cigararray[:,0] == 4)), 'float32'), [cigararray.shape[0], 1]) * cigararray
-    a1 = tf.reshape(a[:,1], [reccount, cigarweight])
-
-    a = tf.concat([cigararray, tf.reshape(tf.matmul(a1, tf.linalg.band_part(tf.ones([a1.shape[1] , a1.shape[1]], tf.float32), 0, -1)) + refstartarray, [cigararray.shape[0], 1])], axis = 1)
+tf.random.set_seed(123)
 
 
-    return tf.boolean_mask(a, (start <= a[:,-1]) & (a[:,-1] < end))
-    return tf.boolean_mask(a, (start <= a[:,-2]) & (a[:,-2] < end) & (a[:,0] == 1))[:,1:]
-
-
-
-def baseinfo(bamfile, contig, start, end):
+class convse(keras.layers.Layer):
     
+    def __init__(self,filters, kernel_size, strides=(1, 1), padding='valid', activation='relu', se_ratio = 0.25):
 
-    cigararray = []
-    readstartandend = []
-    refpositonlist = []
-    refpositonweight = []
-    substitionarray, deletionarray, substitionweight, deletionweight = [], [], [], []
-    nooverlap = True
-    qualityarray = []
+        super(convse, self).__init__()
+        self.conv = layers.Conv2D(filters, kernel_size, strides=strides, padding=padding, activation=activation)
+        
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.strides = strides
+        
+        self.filters_se = max(1, int(filters*se_ratio))
+        self.conv_1 = Conv2D(filters=self.filters_se,
+                    kernel_size=1,
+                    padding='same',
+                    use_bias=True)
+        self.conv_2 = Conv2D(filters=self.filters,
+                    kernel_size=1,
+                    padding='same',
+                    activation='sigmoid',
+                    use_bias=True)
+
+    def call(self, inputs):
+        
+        x = self.conv(inputs)
+
+
+
+        se = GlobalAveragePooling2D()(x)
+        se = Reshape((1, 1, self.filters))(se)
+
+
+        se = self.conv_1(se)
+
+        se = Activation(tf.nn.swish)(se)
+
+        se = self.conv_2(se)
+
+
+        return multiply([x, se])
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], 1, self.filters)
+
+
+
+def cnn_layer():
+    model = keras.models.Sequential()
+
+    model.add(tf.keras.layers.AveragePooling2D([2, 4]))
+    model.add(convse(108, (1, 8), strides=(1, 8), padding='valid', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (2, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (3, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(80, (4, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([3,1]))
+
+    model.add(convse(80, (3, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (2, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+    model.add(layers.Flatten())
+
+
+    return model
+
+def init_model():
+    inputs = tf.keras.Input((None, 200, 32, 2))
+
+    cnn_layer_object = cnn_layer()
+    encoded_frames = tf.keras.layers.TimeDistributed(cnn_layer_object)(inputs)
+    encoded_sequence = layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences = True))(encoded_frames)
+    encoded_sequence = layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences = True))(encoded_sequence)
+
+    hidden_layer = tf.keras.layers.Dense(units=64, activation="relu")(encoded_sequence)
+    hidden_layer = layers.Dropout(0.4)(hidden_layer)
+    hidden_layer = tf.keras.layers.Dense(units=64, activation="relu")(hidden_layer)
+    hidden_layer = layers.Dropout(0.4)(hidden_layer)
+
+    outputs = tf.keras.layers.Dense(units=2, activation="sigmoid")(hidden_layer)
+    model = tf.keras.Model(inputs, outputs)
+    model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer=tf.optimizers.Adam(),metrics=[keras.metrics.TruePositives(name='tp'),
+              keras.metrics.FalsePositives(name='fp'),
+              keras.metrics.TrueNegatives(name='tn'),
+              keras.metrics.FalseNegatives(name='fn'), 
+              keras.metrics.BinaryAccuracy(name='accuracy'),
+              keras.metrics.Precision(name='precision'),
+              keras.metrics.Recall(name='recall')])
+    model.summary()
+    return model
+
+
+
+
+
+def chioce_top18(tensor, geno = False):
+    batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+    if(rowcount < 32):
+        tensor = np.concatenate([tensor, np.zeros([batch_size, window_size, 32-rowcount], dtype = np.float32)], axis = 2)
+    if(geno == True):
+        return tensor[:,:,:32].reshape(tensor.shape[0], tensor.shape[1], 32, 1)
+    index = np.argsort(tensor.sum(axis = 1, keepdims = True), axis = 2)[:,:,-32:].reshape(-1, 32)
+    l = []
+    for loc in range(batch_size):
+        l.append(tensor[loc][:,index[loc]])
+    return np.concatenate(l, axis = 0).reshape(tensor.shape[0], tensor.shape[1], 32, 1)
+###########################
+def insloc(rs, start, end, cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist,  row):
+    loc = rs
+    rec = False
+    for item in cigartuples:
+        if(item[0] not in [1, 4, 5, 6]):
+            if(rec == False and loc>=start):
+                rec = True
+            if(rec == True and item[0] == 2):
+                for bias in range(min(item[1], end - loc)):
+                    del_collist.append(loc+bias)
+                    del_rowlist.append(row)
+
+                    
+            loc += item[1]
+            
+            
+            if(loc>=end):
+                break
+        elif(rec == True and item[0] == 1):
+            ins_collist.append(loc)
+            ins_rowlist.append(row)
+            ins_data.append(item[1])
+############################
+
+def baseinfo_AlignedSegment(bamfilepath, contig, start, end, window_size, maxread, outputpath, samplelocation = np.array(0)):
+
+
+    if(samplelocation.size == 1):
+        samplelocation = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
+        end = samplelocation[-1, 1]  
+    ######################################
+
+    collist = []
+    rowlist = []
+    del_collist = []
+    del_rowlist = []
+    del_data = []
+    rowend = []
+    ins_collist = []
+    ins_rowlist = []
+    ins_data = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
+
+    maxlen = 0
+    nooverlap = False
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+
+
+
+        nooverlap = True
+        count += 1
+        
+        rs = AlignedSegment.reference_start
+
+        cstart = max(rs, start)
+        cend = min(AlignedSegment.reference_end, end)
+        
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+
+        newrow = True
+        loc = -1
+
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True and (rowcount <= 500)):
+            rowcount += 1
+            rowend.append(cend)
+            insloc(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, len(rowend)-1)
+        
+    geno = False
+    t1, t2 = (coo_matrix((np.ones(len(del_rowlist)), (del_rowlist, del_collist)), shape=(len(rowend), end-start)).toarray()).T, coo_matrix((np.log(ins_data), (ins_rowlist, ins_collist)), shape=((len(rowend), end-start))).toarray().T
+    data = np.concatenate((chioce_top18(t1.reshape(-1, window_size, t1.shape[1]), geno), chioce_top18(t2.reshape(-1, window_size, t2.shape[1]), geno)), axis = -1)
+    
+    
+    
+    ##################################################
+
+    mask = data.reshape(((end-start)//window_size, window_size * maxread*2)).sum(axis =1) != 0
+    data = data[mask]
+    index = np.arange(start, end, window_size)[mask]
+
+
+    print(data.shape, index.shape)
+    if(outputpath[-1] != '/'):
+        outputpath += '/'
+    np.savez_compressed(outputpath+contig+','+str(start)+','+str(end)+',data', data = data, label = np.array([0]), index = index)
+    print(contig, str(start), str(end), 'completed')
+def call_deletion(svlist, contig, index, data, predict, genotype = False, genotypelist = [], window_size = 200):
+    if(genotype == False):
+        loc = -1
+        insv = False
+        for p in predict:
+            loc += 1
+            if(p > 0):
+                if(insv == False):
+                    svstartloc = index[loc]
+                    qc = p
+                    insv = True
+
+                qc = max(qc, p)
+            else:
+                if(insv == True):
+
+                    svlist.append(['DEL', contig, svstartloc, index[loc], qc, ''])
+                    insv = False
+
+
+                    continue
+
+
+    else:
+        locingenotype = 0
+        genotypecache = []
+        loc = -1
+        insv = False
+        for p in predict:
+            loc += 1
+            if(p > 0):
+                if(insv == False):
+                    svstartloc = index[loc]
+                    qc = p
+                    genotypecache = []
+                    insv = True
+
+                qc = max(qc, p)
+                genotypecache.append(np.argsort(genotypelist[locingenotype])[::-1][0])
+                locingenotype += 1
+            else:
+                if(insv == True):
+
+                    svlist.append(['DEL', contig, svstartloc, index[loc], qc, genotypecache])
+                    genotypecache = []
+                    insv = False
+
+  
+                    continue
+
+
+
+        
+    return svlist
+
+def call_Insertion(svlist, contig, index, data, predict, genotype = False, genotypelist = [],  window_size = 200):
+
+    if(genotype == False):
+        loc = 0
+        insv = False
+        for p in predict:
+            if(p > 0):
+                if(insv == False):
+                    #svstartloc = index[loc]
+                    qc = p
+                    insv = True
+                    svstartloc = index[loc]
+                qc = max(qc, p)
+                if(qc > p):
+                    svstartloc = index[loc]
+            else:
+                if(insv == True):
+                    svlist.append(['INS', contig, svstartloc, index[loc], qc, ''])
+                    insv = False
+            loc += 1  
+    else:
+        
+        locingenotype = 0
+        genotypecache = []
+        
+        loc = 0
+        insv = False
+        for p in predict:
+            if(p > 0):
+                if(insv == False):
+                    #svstartloc = index[loc]
+                    qc = p
+                    insv = True
+                    svstartloc = index[loc]
+                    genotypecache = []
+                qc = max(qc, p)
+                if(qc > p):
+                    svstartloc = index[loc]
+                genotypecache.append(np.argsort(genotypelist[locingenotype])[::-1][0])
+                locingenotype += 1
+            else:
+                if(insv == True):
+                    svlist.append(['INS', contig, svstartloc, index[loc], qc, genotypecache])
+                    genotypecache = []
+                    insv = False
+            loc += 1
+        
+        
+    return svlist
+
+def call_genotype(model, prediction, data):
+    #model.load_weights(genotypeweight)
+    mask = np.where(prediction>0)[0]
+
+    tmpdata = tf.data.Dataset.from_tensor_slices(data).batch(8048)
+    return model.predict(tmpdata)
+
+
+
+def batchdata(data, timestep, window_size, maxread):
+    numoftimestep = ((data.shape[0])//timestep) - 1
+    tailtimestep = data.shape[0] - numoftimestep*timestep
+
+    return data[:numoftimestep*timestep].reshape((numoftimestep, timestep, window_size, maxread, data.shape[-1])), data[numoftimestep*timestep:].reshape((1, tailtimestep, window_size, maxread, data.shape[-1]))
+
+  
+def feature_matrix(bamfilepath, outputpath = './data/', max_worker = 16, vcfpath = '', window_size = 200, maxread = 32, block = 5e6, includecontig = [], genotype = False):
+
+    if __name__ == '__main__':
+        max_worker = min(max_worker, (len(os.sched_getaffinity(0))-1))
+        print('Process number limit to ', max_worker-1)
+        print('maxread ', maxread)
+        
+
+        bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+
+        
+        block = int(block)
+        contig2length = {}
+        for count in range(len(bamfile.get_index_statistics())):
+            contig2length[bamfile.get_index_statistics()[count].contig] = bamfile.lengths[count]
+        if(includecontig == []):
+            for contig in contig2length:
+                includecontig.append(contig)
+        for contig in includecontig:
+            for AlignedSegment in bamfile.fetch(contig):
+                start = AlignedSegment.reference_start
+                break
+            while((start + 2*block) <  contig2length[contig]):
+                while(True):
+                    if(len(multiprocessing.active_children()) < max_worker):
+                        print('working on contig = ', contig, start, start + block)
+                        contig = str(contig)                                          
+                        multiprocessing.Process(target=baseinfo_AlignedSegment, args=(bamfilepath, contig,start, start + block, window_size, maxread, outputpath)).start()
+                        break
+                    else:
+                        time.sleep(2)
+                start +=  block
+            while(True):
+                if(len(multiprocessing.active_children()) < max_worker):
+                    print('working on contig = ', contig, start, start + block)
+                    contig = str(contig)
+                    multiprocessing.Process(target=baseinfo_AlignedSegment, args=( bamfilepath, contig,start, contig2length[contig], window_size, maxread, outputpath)).start()
+                    break
+                else:
+                    time.sleep(2)
+
+
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Input, Dense, Conv2D, DepthwiseConv2D, BatchNormalization, Dropout, GlobalAveragePooling2D, Reshape, multiply, add, Activation
+import multiprocessing
+import os
+from multiprocessing import Process, Queue
+from multiprocessing.sharedctypes import Value, Array
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+from scipy.sparse import coo_matrix
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import threading
+from os import listdir
+from os.path import isfile, join
+#tf.config.set_visible_devices([], 'GPU')
+
+tf.random.set_seed(123)
+
+
+class convse(keras.layers.Layer):
+    
+    def __init__(self,filters, kernel_size, strides=(1, 1), padding='valid', activation='relu', se_ratio = 0.25):
+
+        super(convse, self).__init__()
+        self.conv = layers.Conv2D(filters, kernel_size, strides=strides, padding=padding, activation=activation)
+        
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.strides = strides
+        
+        self.filters_se = max(1, int(filters*se_ratio))
+        self.conv_1 = Conv2D(filters=self.filters_se,
+                    kernel_size=1,
+                    padding='same',
+                    use_bias=True)
+        self.conv_2 = Conv2D(filters=self.filters,
+                    kernel_size=1,
+                    padding='same',
+                    activation='sigmoid',
+                    use_bias=True)
+
+    def call(self, inputs):
+        
+        x = self.conv(inputs)
+
+
+
+        se = GlobalAveragePooling2D()(x)
+        se = Reshape((1, 1, self.filters))(se)
+
+
+        se = self.conv_1(se)
+
+        se = Activation(tf.nn.swish)(se)
+
+        se = self.conv_2(se)
+
+
+        return multiply([x, se])
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], 1, self.filters)
+
+
+
+def cnn_layer():
+    model = keras.models.Sequential()
+
+    model.add(tf.keras.layers.AveragePooling2D([2, 4]))
+    model.add(convse(108, (1, 8), strides=(1, 8), padding='valid', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (2, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (3, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(80, (4, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([3,1]))
+
+    model.add(convse(80, (3, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (2, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+    model.add(layers.Flatten())
+
+
+    return model
+
+def init_model():
+    inputs = tf.keras.Input((None, 200, 32, 2))
+
+    cnn_layer_object = cnn_layer()
+    encoded_frames = tf.keras.layers.TimeDistributed(cnn_layer_object)(inputs)
+    encoded_sequence = layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences = True))(encoded_frames)
+    encoded_sequence = layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences = True))(encoded_sequence)
+
+    hidden_layer = tf.keras.layers.Dense(units=64, activation="relu")(encoded_sequence)
+    hidden_layer = layers.Dropout(0.4)(hidden_layer)
+    hidden_layer = tf.keras.layers.Dense(units=64, activation="relu")(hidden_layer)
+    hidden_layer = layers.Dropout(0.4)(hidden_layer)
+
+    outputs = tf.keras.layers.Dense(units=2, activation="sigmoid")(hidden_layer)
+    model = tf.keras.Model(inputs, outputs)
+    model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer=tf.optimizers.Adam(),metrics=[keras.metrics.TruePositives(name='tp'),
+              keras.metrics.FalsePositives(name='fp'),
+              keras.metrics.TrueNegatives(name='tn'),
+              keras.metrics.FalseNegatives(name='fn'), 
+              keras.metrics.BinaryAccuracy(name='accuracy'),
+              keras.metrics.Precision(name='precision'),
+              keras.metrics.Recall(name='recall')])
+    model.summary()
+    return model
+
+
+
+
+
+def chioce_top18(tensor, geno = False):
+    batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+    if(rowcount < 32):
+        tensor = np.concatenate([tensor, np.zeros([batch_size, window_size, 32-rowcount], dtype = np.float32)], axis = 2)
+    if(geno == True):
+        return tensor[:,:,:32].reshape(tensor.shape[0], tensor.shape[1], 32, 1)
+    index = np.argsort(tensor.sum(axis = 1, keepdims = True), axis = 2)[:,:,-32:].reshape(-1, 32)
+    l = []
+    for loc in range(batch_size):
+        l.append(tensor[loc][:,index[loc]])
+    return np.concatenate(l, axis = 0).reshape(tensor.shape[0], tensor.shape[1], 32, 1)
+###########################
+def insloc_1(rs, start, end, cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist,  row):
+    loc = rs
+    rec = False
+    for item in cigartuples:
+        if(item[0] not in [1, 4, 5, 6]):
+            if(rec == False and loc>=start):
+                rec = True
+            if(rec == True and item[0] == 2):
+                for bias in range(min(item[1], end - loc)):
+                    del_collist.append(loc+bias)
+                    del_rowlist.append(row)
+
+                    
+            loc += item[1]
+            
+            
+            if(loc>=end):
+                break
+        elif(rec == True and item[0] == 1):
+            ins_collist.append(loc)
+            ins_rowlist.append(row)
+            ins_data.append(item[1])
+############################
+
+def baseinfo_AlignedSegment(bamfilepath, contig, start, end, window_size, maxread, outputpath, samplelocation = np.array(0)):
+
+
+    if(samplelocation.size == 1):
+        samplelocation = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
+        end = samplelocation[-1, 1]  
+    ######################################
+
+    collist = []
+    rowlist = []
+    del_collist = []
+    del_rowlist = []
+    del_data = []
+    rowend = []
+    ins_collist = []
+    ins_rowlist = []
+    ins_data = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
+
+    maxlen = 0
+    nooverlap = False
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+    for AlignedSegment in bamfile.fetch(contig, start, end):
+
+
+
+        nooverlap = True
+        count += 1
+        
+        rs = AlignedSegment.reference_start
+
+        cstart = max(rs, start)
+        cend = min(AlignedSegment.reference_end, end)
+        
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+
+        newrow = True
+        loc = -1
+
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                insloc_1(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True and (rowcount <= 500)):
+            rowcount += 1
+            rowend.append(cend)
+            insloc_1(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, len(rowend)-1)
+        
+    geno = False
+    t1, t2 = (coo_matrix((np.ones(len(del_rowlist)), (del_rowlist, del_collist)), shape=(len(rowend), end-start)).toarray()).T, coo_matrix((np.log(ins_data), (ins_rowlist, ins_collist)), shape=((len(rowend), end-start))).toarray().T
+    data = np.concatenate((chioce_top18(t1.reshape(-1, window_size, t1.shape[1]), geno), chioce_top18(t2.reshape(-1, window_size, t2.shape[1]), geno)), axis = -1)
+    
+    
+    
+    ##################################################
+
+    mask = data.reshape(((end-start)//window_size, window_size * maxread*2)).sum(axis =1) != 0
+    data = data[mask]
+    index = np.arange(start, end, window_size)[mask]
+
+
+    print(data.shape, index.shape)
+    np.savez_compressed(outputpath+contig+','+str(start)+','+str(end)+',data', data = data, label = np.array([0]), index = index)
+    print(contig, str(start), str(end), 'completed')
+def call_deletion(svlist, contig, index, data, predict, genotype = False, genotypelist = [], window_size = 200):
+    if(genotype == False):
+        loc = -1
+        insv = False
+        for p in predict:
+            loc += 1
+            if(p > 0):
+                if(insv == False):
+                    svstartloc = index[loc]
+                    qc = p
+                    insv = True
+
+                qc = max(qc, p)
+            else:
+                if(insv == True):
+
+                    svlist.append(['DEL', contig, svstartloc, index[loc], qc, ''])
+                    insv = False
+
+
+                    continue
+
+
+    else:
+        locingenotype = 0
+        genotypecache = []
+        loc = -1
+        insv = False
+        for p in predict:
+            loc += 1
+            if(p > 0):
+                if(insv == False):
+                    svstartloc = index[loc]
+                    qc = p
+                    genotypecache = []
+                    insv = True
+
+                qc = max(qc, p)
+                genotypecache.append(np.argsort(genotypelist[locingenotype])[::-1][0])
+                locingenotype += 1
+            else:
+                if(insv == True):
+
+                    svlist.append(['DEL', contig, svstartloc, index[loc], qc, genotypecache])
+                    genotypecache = []
+                    insv = False
+
+  
+                    continue
+
+
+
+        
+    return svlist
+
+def call_Insertion(svlist, contig, index, data, predict, genotype = False, genotypelist = [],  window_size = 200):
+
+    if(genotype == False):
+        loc = 0
+        insv = False
+        for p in predict:
+            if(p > 0):
+                if(insv == False):
+                    #svstartloc = index[loc]
+                    qc = p
+                    insv = True
+                    svstartloc = index[loc]
+                qc = max(qc, p)
+                if(qc > p):
+                    svstartloc = index[loc]
+            else:
+                if(insv == True):
+                    svlist.append(['INS', contig, svstartloc, index[loc], qc, ''])
+                    insv = False
+            loc += 1  
+    else:
+        
+        locingenotype = 0
+        genotypecache = []
+        
+        loc = 0
+        insv = False
+        for p in predict:
+            if(p > 0):
+                if(insv == False):
+                    #svstartloc = index[loc]
+                    qc = p
+                    insv = True
+                    svstartloc = index[loc]
+                    genotypecache = []
+                qc = max(qc, p)
+                if(qc > p):
+                    svstartloc = index[loc]
+                genotypecache.append(np.argsort(genotypelist[locingenotype])[::-1][0])
+                locingenotype += 1
+            else:
+                if(insv == True):
+                    svlist.append(['INS', contig, svstartloc, index[loc], qc, genotypecache])
+                    genotypecache = []
+                    insv = False
+            loc += 1
+        
+        
+    return svlist
+
+def call_genotype(model, prediction, data):
+    #model.load_weights(genotypeweight)
+    mask = np.where(prediction>0)[0]
+
+    tmpdata = tf.data.Dataset.from_tensor_slices(data).batch(8048)
+    return model.predict(tmpdata)
+
+
+
+def batchdata(data, timestep, window_size, maxread):
+    numoftimestep = ((data.shape[0])//timestep) - 1
+    tailtimestep = data.shape[0] - numoftimestep*timestep
+
+    return data[:numoftimestep*timestep].reshape((numoftimestep, timestep, window_size, maxread, data.shape[-1])), data[numoftimestep*timestep:].reshape((1, tailtimestep, window_size, maxread, data.shape[-1]))
+
+  
+def feature_matrix(bamfilepath, outputpath = './data/', max_worker = 16, vcfpath = '', window_size = 200, maxread = 32, block = 5e6, includecontig = [], genotype = False):
+
+    if __name__ == '__main__':
+        max_worker = min(max_worker, (len(os.sched_getaffinity(0))-1))
+        print('Process number limit to ', max_worker-1)
+        print('maxread ', maxread)
+        
+        if(outputpath[-1] != '/'):
+            outputpath += '/'
+        if(os.path.isdir(outputpath) == True):
+            for path in [outputpath+f for f in listdir(outputpath) if(isfile(join(outputpath, f)) and 'npz' in f)]:
+                os.remove(path)
+        else:
+            os.mkdir(outputpath[:-1])
+            
+        bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+
+        
+        block = int(block)
+        contig2length = {}
+        for count in range(len(bamfile.get_index_statistics())):
+            contig2length[bamfile.get_index_statistics()[count].contig] = bamfile.lengths[count]
+        if(includecontig == []):
+            for contig in contig2length:
+                includecontig.append(contig)
+        for contig in includecontig:
+            for AlignedSegment in bamfile.fetch(contig):
+                start = AlignedSegment.reference_start
+                break
+            while((start + 2*block) <  contig2length[contig]):
+                while(True):
+                    if(len(multiprocessing.active_children()) < max_worker):
+                        print('working on contig = ', contig, start, start + block)
+                        contig = str(contig)                                          
+                        multiprocessing.Process(target=baseinfo_AlignedSegment, args=(bamfilepath, contig,start, start + block, window_size, maxread, outputpath)).start()
+                        break
+                    else:
+                        time.sleep(2)
+                start +=  block
+            while(True):
+                if(len(multiprocessing.active_children()) < max_worker):
+                    print('working on contig = ', contig, start, start + block)
+                    contig = str(contig)
+                    multiprocessing.Process(target=baseinfo_AlignedSegment, args=( bamfilepath, contig,start, contig2length[contig], window_size, maxread, outputpath)).start()
+                    break
+                else:
+                    time.sleep(2)
+
+                
+
+
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Input, Dense, Conv2D, DepthwiseConv2D, BatchNormalization, Dropout, GlobalAveragePooling2D, Reshape, multiply, add, Activation
+import multiprocessing
+import os
+from multiprocessing import Process, Queue
+from multiprocessing.sharedctypes import Value, Array
+import time
+import pysam
+from pysam import VariantFile
+import pandas as pd
+import numpy as np
+from scipy.sparse import coo_matrix
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import threading
+from os import listdir
+from os.path import isfile, join
+#tf.config.set_visible_devices([], 'GPU')
+
+tf.random.set_seed(123)
+
+
+class convse(keras.layers.Layer):
+    
+    def __init__(self,filters, kernel_size, strides=(1, 1), padding='valid', activation='relu', se_ratio = 0.25):
+
+        super(convse, self).__init__()
+        self.conv = layers.Conv2D(filters, kernel_size, strides=strides, padding=padding, activation=activation)
+        
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.strides = strides
+        
+        self.filters_se = max(1, int(filters*se_ratio))
+        self.conv_1 = Conv2D(filters=self.filters_se,
+                    kernel_size=1,
+                    padding='same',
+                    use_bias=True)
+        self.conv_2 = Conv2D(filters=self.filters,
+                    kernel_size=1,
+                    padding='same',
+                    activation='sigmoid',
+                    use_bias=True)
+
+    def call(self, inputs):
+        
+        x = self.conv(inputs)
+
+
+
+        se = GlobalAveragePooling2D()(x)
+        se = Reshape((1, 1, self.filters))(se)
+
+
+        se = self.conv_1(se)
+
+        se = Activation(tf.nn.swish)(se)
+
+        se = self.conv_2(se)
+
+
+        return multiply([x, se])
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], 1, self.filters)
+
+
+
+def cnn_layer():
+    model = keras.models.Sequential()
+
+    model.add(tf.keras.layers.AveragePooling2D([2, 4]))
+    model.add(convse(108, (1, 8), strides=(1, 8), padding='valid', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (2, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (3, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(80, (4, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([3,1]))
+
+    model.add(convse(80, (3, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+
+    model.add(convse(64, (2, 1), padding='same', activation='relu'))
+    model.add(layers.MaxPooling2D([2,1]))
+    model.add(layers.Flatten())
+
+
+    return model
+
+def init_model():
+    inputs = tf.keras.Input((None, 200, 32, 2))
+
+    cnn_layer_object = cnn_layer()
+    encoded_frames = tf.keras.layers.TimeDistributed(cnn_layer_object)(inputs)
+    encoded_sequence = layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences = True))(encoded_frames)
+    encoded_sequence = layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences = True))(encoded_sequence)
+
+    hidden_layer = tf.keras.layers.Dense(units=64, activation="relu")(encoded_sequence)
+    hidden_layer = layers.Dropout(0.4)(hidden_layer)
+    hidden_layer = tf.keras.layers.Dense(units=64, activation="relu")(hidden_layer)
+    hidden_layer = layers.Dropout(0.4)(hidden_layer)
+
+    outputs = tf.keras.layers.Dense(units=2, activation="sigmoid")(hidden_layer)
+    model = tf.keras.Model(inputs, outputs)
+    model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer=tf.optimizers.Adam(),metrics=[keras.metrics.TruePositives(name='tp'),
+              keras.metrics.FalsePositives(name='fp'),
+              keras.metrics.TrueNegatives(name='tn'),
+              keras.metrics.FalseNegatives(name='fn'), 
+              keras.metrics.BinaryAccuracy(name='accuracy'),
+              keras.metrics.Precision(name='precision'),
+              keras.metrics.Recall(name='recall')])
+    model.summary()
+    return model
+
+
+
+
+
+def chioce_top18(tensor, geno = False):
+    batch_size, window_size, rowcount = tensor.shape[0], tensor.shape[1], tensor.shape[2]
+    k = 18
+    if(rowcount < k):
+        tensor = np.concatenate([tensor, np.zeros([batch_size, window_size, k-rowcount], dtype = np.float32)], axis = 2)
+    if(geno == True):
+        return tensor[:,:,:k].reshape(tensor.shape[0], tensor.shape[1], k, 1)
+    index = np.argsort(tensor.sum(axis = 1, keepdims = True), axis = 2)[:,:,-k:].reshape(-1, k)
+    l = []
+    for loc in range(batch_size):
+        l.append(tensor[loc][:,index[loc]])
+    return np.concatenate(l, axis = 0).reshape(tensor.shape[0], tensor.shape[1], k, 1)
+###########################
+def insloc_1(rs, start, end, cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist,  row):
+    loc = rs
+    rec = False
+    for item in cigartuples:
+        if(item[0] not in [1, 4, 5, 6]):
+            if(rec == False and loc>=start):
+                rec = True
+            if(rec == True and item[0] == 2):
+                for bias in range(min(item[1], end - loc)):
+                    del_collist.append(loc+bias)
+                    del_rowlist.append(row)
+
+                    
+            loc += item[1]
+            
+            
+            if(loc>=end):
+                break
+
+############################
+
+def baseinfo_AlignedSegment(bamfilepath, contig, start, end, window_size, maxread, outputpath, samplelocation = np.array(0)):
+
+
+    if(samplelocation.size == 1):
+        samplelocation = start + np.column_stack((np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int(( end - start - 1) / window_size) + 1), 1), np.arange(0, window_size * (int((end - start - 1) / window_size) + 1), window_size).reshape((int((end - start - 1) / window_size) + 1), 1) + window_size))
+        end = samplelocation[-1, 1]  
+    ######################################
+
+    collist = []
+    rowlist = []
+    del_collist = []
+    del_rowlist = []
+    del_data = []
+    rowend = []
+    ins_collist = []
+    ins_rowlist = []
+    ins_data = []
+    count = 0
+    maxend = 0
+    minstart = 999999999
+    rowcount = 0
+
+    maxlen = 0
+    nooverlap = False
+    bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
+    blocksize = int(1e6)
+    data = []
 
     for AlignedSegment in bamfile.fetch(contig, start, end):
+
+
+
+        nooverlap = True
+        count += 1
+
+        rs = AlignedSegment.reference_start
+
+        cstart = max(rs, start)
+        cend = min(AlignedSegment.reference_end, end)
+
+        if(maxend<cend):
+            maxend = cend
+        if(minstart>cstart):
+            minstart=cstart
+
+        newrow = True
+        loc = -1
+
+        for oneend in rowend:
+            loc += 1
+            if(oneend<cstart):
+                insloc_1(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, loc)
+                rowend[loc] = cend
+                newrow = False
+                break
+        if(newrow == True and (rowcount <= 70)):
+            rowcount += 1
+            rowend.append(cend)
+            insloc_1(rs-minstart, start-minstart, end-minstart, AlignedSegment.cigartuples, ins_collist, ins_rowlist, ins_data, del_collist, del_rowlist, len(rowend)-1)
+
+    geno = False
+    t1 = (coo_matrix((np.ones(len(del_rowlist)), (del_rowlist, del_collist)), shape=(len(rowend), end-start)).toarray()).T
+    data = (chioce_top18(t1.reshape(-1, window_size, t1.shape[1]), geno))
     
-
-
-
-        cigararray.append(tf.keras.backend.flatten(tf.constant(AlignedSegment.cigartuples)))
-        readstartandend.append([AlignedSegment.reference_start-start, AlignedSegment.reference_end-start, AlignedSegment.mapping_quality, (1 - (AlignedSegment.query_alignment_length / AlignedSegment.infer_read_length()))**2])
-
-        nooverlap = False
-
     
-    if(nooverlap):
-        print(dsahjdaj)
-    readstartandend = tf.constant(readstartandend, tf.float32)
-    cigararray = tf.keras.preprocessing.sequence.pad_sequences(cigararray)
-    reccount, cigarweight = cigararray.shape[0], int(cigararray.shape[1] / 2)
-    cigararray = cigararray.reshape(int(cigararray.size / 2), 2)
+    ##################################################
 
-    cigararray = cigarinfo(cigararray, readstartandend[:,:1], 0, end - start, reccount, cigarweight).numpy().astype('int64')
-    a = cigararray[(cigararray[:,0] == 2) & (cigararray[:,1] > 20)]
-    if(a.size == 0):
-        return []
-    a[:,-1] = a[:,-1] - a[:,-2] 
-    delsig = np.column_stack((a[:,-1:], a[:,-2:-1]))
+    mask = data.reshape(((end-start)//window_size, window_size * maxread)).sum(axis =1) != 0
+    data = data[mask]
+    index = np.arange(start, end, window_size)[mask]
 
 
+    np.savez_compressed(outputpath+contig+','+str(start)+','+str(end)+',data', data = data, label = np.array([0]), index = index)
+    print(contig, str(start), str(end), 'completed')
+def call_deletion(svlist, contig, index, data, predict, genotype = False, genotypelist = [], window_size = 200):
+    if(genotype == False):
+        loc = -1
+        insv = False
+        for p in predict:
+            loc += 1
+            if(p > 0):
+                if(insv == False):
+                    svstartloc = index[loc]
+                    qc = p
+                    insv = True
 
-    loc = np.array(list(delsig))[:,0]
-    binnum = 20
-    binresult = (loc//binnum)
-    mc = Counter(binresult).most_common(1)[0]
-    sp = mc[1]
-    minv, maxv = mc[0]-1, mc[0]+1
-    tmp = np.median(np.array(list(delsig))[(minv<=binresult) *  (maxv>= binresult)], axis = 0).astype('int64')
-    tmp[0] = tmp[0]+start
-    return tmp.tolist()+[sp]
-    
-def baseinfo_main_binsaver(bamfilepath, delloc):
+                qc = max(qc, p)
+            else:
+                if(insv == True):
+
+                    svlist.append(['DEL', contig, svstartloc, index[loc], qc, ''])
+                    insv = False
+
+
+                    continue
+
+
+    else:
+        locingenotype = 0
+        genotypecache = []
+        loc = -1
+        insv = False
+        for p in predict:
+            loc += 1
+            if(p > 0):
+                if(insv == False):
+                    svstartloc = index[loc]
+                    qc = p
+                    genotypecache = []
+                    insv = True
+
+                qc = max(qc, p)
+                genotypecache.append(np.argsort(genotypelist[locingenotype])[::-1][0])
+                locingenotype += 1
+            else:
+                if(insv == True):
+
+                    svlist.append(['DEL', contig, svstartloc, index[loc], qc, genotypecache])
+                    genotypecache = []
+                    insv = False
+
+  
+                    continue
 
 
 
+        
+    return svlist
+
+def call_Insertion(svlist, contig, index, data, predict, genotype = False, genotypelist = [],  window_size = 200):
+
+    if(genotype == False):
+        loc = 0
+        insv = False
+        for p in predict:
+            if(p > 0):
+                if(insv == False):
+                    #svstartloc = index[loc]
+                    qc = p
+                    insv = True
+                    svstartloc = index[loc]
+                qc = max(qc, p)
+                if(qc > p):
+                    svstartloc = index[loc]
+            else:
+                if(insv == True):
+                    svlist.append(['INS', contig, svstartloc, index[loc], qc, ''])
+                    insv = False
+            loc += 1  
+    else:
+        
+        locingenotype = 0
+        genotypecache = []
+        
+        loc = 0
+        insv = False
+        for p in predict:
+            if(p > 0):
+                if(insv == False):
+                    #svstartloc = index[loc]
+                    qc = p
+                    insv = True
+                    svstartloc = index[loc]
+                    genotypecache = []
+                qc = max(qc, p)
+                if(qc > p):
+                    svstartloc = index[loc]
+                genotypecache.append(np.argsort(genotypelist[locingenotype])[::-1][0])
+                locingenotype += 1
+            else:
+                if(insv == True):
+                    svlist.append(['INS', contig, svstartloc, index[loc], qc, genotypecache])
+                    genotypecache = []
+                    insv = False
+            loc += 1
+        
+        
+    return svlist
+
+def call_genotype(model, prediction, data):
+    #model.load_weights(genotypeweight)
+    mask = np.where(prediction>0)[0]
+
+    tmpdata = tf.data.Dataset.from_tensor_slices(data).batch(8048)
+    return model.predict(tmpdata)
+
+
+
+def batchdata(data, timestep, window_size, maxread):
+    numoftimestep = ((data.shape[0])//timestep) - 1
+    tailtimestep = data.shape[0] - numoftimestep*timestep
+
+    return data[:numoftimestep*timestep].reshape((numoftimestep, timestep, window_size, maxread, data.shape[-1])), data[numoftimestep*timestep:].reshape((1, tailtimestep, window_size, maxread, data.shape[-1]))
+
+  
+def feature_matrix(bamfilepath, outputpath = './data/', max_worker = 8, vcfpath = '', window_size = 200, maxread = 18, block = 1e7, includecontig = [], genotype = False):
+
+    max_worker = min(max_worker, (len(os.sched_getaffinity(0))-1))
+    print('Process number limit to ', max_worker-1)
+
+    if(outputpath[-1] != '/'):
+        outputpath += '/'
+    if(os.path.isdir(outputpath) == True):
+        for path in [outputpath+f for f in listdir(outputpath) if(isfile(join(outputpath, f)) and 'npz' in f)]:
+            os.remove(path)
+    else:
+        os.mkdir(outputpath[:-1])
 
     bamfile = pysam.AlignmentFile(bamfilepath, 'rb', threads = 20)
 
 
-    delsig = []
-    for rec in delloc:
-        contig, start, end = str(rec[1]), int(rec[2]), int(rec[3])
+    block = int(block)
+    contig2length = {}
+    for count in range(len(bamfile.get_index_statistics())):
+        contig2length[bamfile.get_index_statistics()[count].contig] = bamfile.lengths[count]
+    if(includecontig == []):
+        for contig in contig2length:
+            includecontig.append(contig)
+    for contig in includecontig:
+        start = 0
+        b = False
+        no = True
+        while(True):
+            for AlignedSegment in bamfile.fetch(contig, start, start + block):
+                no = False
+                if(AlignedSegment.reference_start<start):
+                    b = True
+                    continue
+                if(b != True):
+                    start = AlignedSegment.reference_start
+                break
+            if((no == True) and (start < contig2length[contig])):
+                start += block
+            else:
+                break
 
-        delsig.append(baseinfo(bamfile, contig, start, end))
-    return delsig
-  
+        for AlignedSegment in bamfile.fetch(contig, start, start + block):
+            pass
+        end = min(start + block, AlignedSegment.reference_end)
+        while((start) <  contig2length[contig]):
+
+
+            while(True):
+                if(len(multiprocessing.active_children()) < max_worker):
+                    print('working on contig = ', contig, start, start + block)
+                    contig = str(contig)                                          
+                    multiprocessing.Process(target=baseinfo_AlignedSegment, args=(bamfilepath, contig,start, start + block, window_size, maxread, outputpath)).start()
+                    break
+                else:
+                    time.sleep(2)
+
+            start +=  block
+            b = False
+            no = True
+            while(True):
+                for AlignedSegment in bamfile.fetch(contig, start, start + block):
+                    no = False
+                    if(AlignedSegment.reference_start<start):
+                        b = True
+                        continue
+                    if(b != True):
+                        start = AlignedSegment.reference_start
+                    break
+                if((no == True) and (start < contig2length[contig])):
+                    start += block
+                else:
+                    break
+            for AlignedSegment in bamfile.fetch(contig, start, start + block):
+                pass
+            end = min(start + block, AlignedSegment.reference_end)
+                
+        
+                            
+                    
+                
+                
+
+       
+                            
+                    
+                
+                
+
+
+
+                
+        
+                            
+                    
+                
+                
+
+
+            
+    
